@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8" /><link rel="stylesheet" href="popup.css" /><title>Manuscript</title></head>
 <body><header><div class="logo">M</div><div><h1>Manuscript</h1><p>Google Meet capture</p></div><span id="version"></span></header>
-  <main><div class="status"><span id="dot"></span><strong id="status">Checking backend…</strong></div>
-    <label>Backend Server URL<input id="backend-url" type="url" placeholder="http://localhost:3001" /></label>
-    <button id="save" class="primary">Save & test connection</button><button id="open-web" class="ghost">Open Manuscript Web</button><p id="error" role="alert"></p>
+  <main><div class="status"><span id="dot"></span><div><strong id="status">Checking backend…</strong><small>Ubuntu API on port 3001</small></div></div>
+    <label>Ubuntu VM Backend URL<input id="backend-url" type="url" placeholder="http://192.168.64.10:3001" /><small>Use the VM IP reachable from this MacBook.</small></label>
+    <fieldset><legend>After processing</legend><label class="toggle"><input id="auto-notion" type="checkbox" /> Auto-sync to Notion</label><label class="toggle"><input id="auto-obsidian" type="checkbox" /> Prepare Obsidian export</label></fieldset>
+    <button id="save" class="primary">Save & test connection</button><button id="open-web" class="ghost">Open Manuscript Web Dashboard</button><p id="error" role="alert"></p>
   </main><footer>Use your Ubuntu VM IP when Chrome runs on a MacBook.</footer><script src="popup.js"></script></body></html>

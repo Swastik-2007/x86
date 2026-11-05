@@ -1,7 +1,7 @@
 {
   "name": "manuscript",
-  "version": "6.0.2",
-  "description": "Manuscript — browser-first meeting intelligence with Google Meet capture, structured decisions, action tracking, Notion sync, and Obsidian export.",
+  "version": "7.0.0",
+  "description": "Manuscript — browser-first meeting intelligence with Local AI, Google Meet capture, speaker identity, action tracking, scheduling, and rich exports.",
   "keywords": ["ai-meeting-notes", "meeting-transcription", "decision-log", "action-tracker", "google-meet", "chrome-extension", "notion", "obsidian", "web-app", "node-api"],
   "homepage": "https://github.com/Swastik-2007/x86",
   "bugs": { "url": "https://github.com/Swastik-2007/x86/issues" },

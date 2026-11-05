@@ -1,6 +1,6 @@
 /**
  * Packages the Chrome extension into dist/manuscript-extension.zip
- * with all files under an "Extension" folder.
+ * with all files under a "manuscript-chrome-extension" folder.
  * Run: pnpm run build:ext
  */
 
@@ -27,8 +27,6 @@ if (fs.existsSync(manifestPath)) {
 
 fs.mkdirSync(DIST, { recursive: true });
 fs.rmSync(STAGING_ROOT, { recursive: true, force: true });
-// fs.cpSync(EXTENSION_SRC, STAGING_DIR, { recursive: true });
-// Replace fs.cpSync(srcDir, destDir, { recursive: true }) around line 30 with:
 function copyDirSafe(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
@@ -42,9 +40,8 @@ function copyDirSafe(src, dest) {
   }
 }
 
-// Clean up any locked staging folder first, then copy:
 fs.rmSync(STAGING_DIR, { recursive: true, force: true });
-copyDirSafe(EXTENSION_SRC, STAGING_DIR); // Use the exact variable names from lines 25-30 of build-extension.js
+copyDirSafe(EXTENSION_SRC, STAGING_DIR);
 
 try {
   if (process.platform === 'win32') {
@@ -65,4 +62,4 @@ try {
   fs.rmSync(STAGING_ROOT, { recursive: true, force: true });
 }
 
-console.log(`✓ ${path.relative(ROOT, ZIP_PATH)} (Extension/...)`);
+console.log(`✓ ${path.relative(ROOT, ZIP_PATH)} (manuscript-chrome-extension/...)`);

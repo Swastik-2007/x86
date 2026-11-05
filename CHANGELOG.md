@@ -1,5 +1,26 @@
 # Changelog
 
+## [7.0.0] - 2026-11-05
+
+### Added
+
+- First-class MacBook Local AI support for Python Whisper multipart endpoints and LM Studio OpenAI-compatible LFM models, including SQLite settings, connection checks, caption-only input, and resilient local-model JSON recovery.
+- Real-name participant hints, atomic speaker rename propagation, and named transcript review across meetings, decisions, attendees, captions, notes, and action owners.
+- Four-column Action & Decision Tracker with Blocked status, source evidence, filters, reassignment, standalone actions, exports, and action-deadline calendar links.
+- Calendar & Schedule page with month/week views, meeting CRUD, agenda and participants, Google Calendar links, ICS downloads, and Google Meet extension context priming.
+- How It Works page with live media/API/Local AI/extension/export checks, guided fixes, a button dictionary, contextual tooltips, and toast feedback.
+
+### Changed
+
+- Upgraded the Google Meet extension with participant/caption scraping, draggable recording controls, decision flags, per-recording export preferences, completion actions, and scheduled-meeting context.
+- Enriched Notion and Obsidian output with meeting metadata, named transcripts, decision callouts, assigned tasks, participant frontmatter, app links, and clean Markdown downloads.
+- Kept all web and extension controls square-cornered and expanded the server API/database for local settings, action evidence, and scheduled meetings.
+
+### Fixed
+
+- Prevented conversational, fenced, trailing-comma, and partially emitted JSON from smaller local LLMs from breaking meeting processing.
+- Preserved existing action records during the SQLite schema upgrade and kept VM-to-Mac service URLs out of browser bundles.
+
 ## [6.0.2] - 2026-11-05
 
 ### Changed

@@ -3,6 +3,8 @@ const input = document.getElementById('backend-url');
 const status = document.getElementById('status');
 const dot = document.getElementById('dot');
 const error = document.getElementById('error');
+const notion = document.getElementById('auto-notion');
+const obsidian = document.getElementById('auto-obsidian');
 document.getElementById('version').textContent = `v${chrome.runtime.getManifest().version}`;
 
 function check() {
@@ -13,6 +15,18 @@ function check() {
   });
 }
 
-chrome.storage.local.get('backendUrl').then((stored) => { input.value = stored.backendUrl || DEFAULT_URL; check(); });
-document.getElementById('save').addEventListener('click', async () => { await chrome.storage.local.set({ backendUrl: input.value.trim().replace(/\/$/, '') || DEFAULT_URL }); check(); });
+chrome.storage.local.get(['backendUrl', 'autoSyncNotion', 'autoExportObsidian']).then((stored) => {
+  input.value = stored.backendUrl || DEFAULT_URL;
+  notion.checked = Boolean(stored.autoSyncNotion);
+  obsidian.checked = Boolean(stored.autoExportObsidian);
+  check();
+});
+document.getElementById('save').addEventListener('click', async () => {
+  await chrome.storage.local.set({
+    backendUrl: input.value.trim().replace(/\/$/, '') || DEFAULT_URL,
+    autoSyncNotion: notion.checked,
+    autoExportObsidian: obsidian.checked,
+  });
+  check();
+});
 document.getElementById('open-web').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_WEB' }, () => window.close()));

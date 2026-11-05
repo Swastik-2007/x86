@@ -37,6 +37,28 @@ function captionTranscript(captions) {
   })).filter((segment) => segment.text.trim());
 }
 
+function isGenericSpeaker(value) {
+  return /^(?:speaker|guest|user|participant|google meet caption)(?:\s*\d+)?$/i.test(String(value || '').trim());
+}
+
+function mergeCaptionNames(transcript, captions) {
+  const named = captionTranscript(captions).filter((segment) => !isGenericSpeaker(segment.speaker));
+  const hints = [...new Set((captions || []).filter((caption) => caption.participantOnly).map((caption) => String(caption.speaker || '').trim()).filter(Boolean))];
+  if (!transcript.length) return captionTranscript(captions);
+  const genericLabels = [...new Set(transcript.map((segment) => segment.speaker).filter(isGenericSpeaker))];
+  const hintByLabel = new Map(genericLabels.map((label, index) => [label, hints[index]]).filter(([, hint]) => hint));
+  return transcript.map((segment) => {
+    const start = Number(segment.startTime) || 0;
+    const match = named.reduce((best, caption) => {
+      const distance = Math.abs((Number(caption.startTime) || 0) - start);
+      return !best || distance < best.distance ? { caption, distance } : best;
+    }, null);
+    if (match && match.distance <= 8 && isGenericSpeaker(segment.speaker)) return { ...segment, speaker: match.caption.speaker };
+    const hint = hintByLabel.get(segment.speaker);
+    return hint ? { ...segment, speaker: hint } : segment;
+  });
+}
+
 function normalizedActions(notes) {
   const result = [];
   for (const item of notes.action_items || notes.actions || []) {
@@ -63,28 +85,35 @@ function structuredNotes(notes) {
   };
 }
 
-async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liveNotes, captions, startedAt: _startedAt, config, emit }) {
-  const wavPath = path.join(path.dirname(uploadPath), `${id}.wav`);
+async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liveNotes, captions, exportPreferences = {}, startedAt: _startedAt, config, emit }) {
+  const wavPath = uploadPath ? path.join(path.dirname(uploadPath), `${id}.wav`) : null;
   const notify = (stage, percent, extra = {}) => emit({ type: 'processing', meetingId: id, stage, percent, ...extra });
   try {
-    notify('normalizing', 5);
-    await normalizeAudio(uploadPath, wavPath, config.ffmpegPath);
-    db.updateMeeting(id, { audio_path: wavPath });
-
-    notify('transcribing', 15);
-    const provider = sttRegistry.get(config.sttService || sttRegistry.defaultId());
-    const model = sttRegistry.resolveModel(provider, config.sttModels?.[provider.id]);
     let transcript;
-    try {
-      transcript = await provider.transcribe({
-        wavPath, model, config,
-        onProgress: (fraction) => notify('transcribing', 15 + Math.round((Number(fraction) || 0) * 35)),
-      });
-    } catch (error) {
-      const fallback = captionTranscript(captions);
-      if (!fallback.length) throw error;
-      transcript = fallback;
-      notify('transcribing', 50, { warning: `Audio transcription failed; using captured captions: ${error.message}` });
+    if (!uploadPath) {
+      transcript = captionTranscript(captions);
+      if (!transcript.length) throw new Error('Caption-only processing requires at least one caption');
+      notify('transcribing', 50, { source: 'captions' });
+    } else {
+      notify('normalizing', 5);
+      await normalizeAudio(uploadPath, wavPath, config.ffmpegPath);
+      db.updateMeeting(id, { audio_path: wavPath });
+
+      notify('transcribing', 15);
+      const provider = sttRegistry.get(config.sttService || sttRegistry.defaultId());
+      const model = sttRegistry.resolveModel(provider, config.sttModels?.[provider.id]);
+      try {
+        transcript = await provider.transcribe({
+          wavPath, model, config,
+          onProgress: (fraction) => notify('transcribing', 15 + Math.round((Number(fraction) || 0) * 35)),
+        });
+        transcript = mergeCaptionNames(transcript, captions);
+      } catch (error) {
+        const fallback = captionTranscript(captions);
+        if (!fallback.length) throw error;
+        transcript = fallback;
+        notify('transcribing', 50, { warning: `Audio transcription failed; using captured captions: ${error.message}` });
+      }
     }
     db.updateMeeting(id, { transcript });
 
@@ -103,7 +132,7 @@ async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liv
     let meeting = db.getMeeting(id);
 
     const exports = { obsidian: obsidianExport(meeting, config.obsidianVault) };
-    if (config.autoSyncExports && config.notionToken && config.notionDatabaseId) {
+    if ((exportPreferences.notion || config.autoSyncExports) && config.notionToken && config.notionDatabaseId) {
       notify('exporting', 92);
       try {
         exports.notionUrl = await syncToNotion(meeting, config);
@@ -121,4 +150,4 @@ async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liv
   }
 }
 
-module.exports = { runPipeline, P8_PROMPT, structuredNotes, normalizedActions, parseField };
+module.exports = { runPipeline, P8_PROMPT, structuredNotes, normalizedActions, parseField, captionTranscript, mergeCaptionNames };

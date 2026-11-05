@@ -1,5 +1,6 @@
 // Pure note-shaping helpers shared by every LLM provider (no Electron/SDK imports).
 const { parse: parsePartialJson } = require('partial-json');
+const { parseJsonObject } = require('./json-extract');
 
 function transcriptToText(transcript) {
   if (!Array.isArray(transcript) || transcript.length === 0) {
@@ -172,7 +173,7 @@ function parseNotesResponse(text, markdown) {
 
   const jsonText = stripCodeFence(text);
   try {
-    return normalizeNotes(JSON.parse(jsonText));
+    return normalizeNotes(parseJsonObject(text));
   } catch {
     return {
       meeting_title: 'Meeting Notes',

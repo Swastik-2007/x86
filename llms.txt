@@ -5,10 +5,11 @@ Manuscript is a pure browser web app, Chrome MV3 extension, and Express/WebSocke
 - Web UI: React/Vite at `0.0.0.0:5173`.
 - API: Express and WebSocket at `0.0.0.0:3001`.
 - Capture: Chrome `tabCapture`, `getDisplayMedia`, `getUserMedia`, Web Audio, and `MediaRecorder`; no Electron or OS-native audio capture.
-- STT: Groq Whisper, Sarvam AI, AssemblyAI, and Google STT provider modules.
-- LLM: Gemini, Groq, or Claude produces structured summaries, evidence-backed decisions, and assigned actions.
-- Persistence: sql.js database plus JSON configuration under `.data/` or `MANUSCRIPT_DATA_DIR`.
-- Exports: Notion pages/databases and Obsidian Markdown plus `obsidian://new` deep links.
+- STT: Local Python Whisper, Groq Whisper, Sarvam AI, AssemblyAI, Google STT, and named Google Meet captions.
+- LLM: Local LM Studio (OpenAI-compatible), Gemini, Groq, or Claude produces structured summaries, evidence-backed decisions, and assigned actions.
+- Persistence: sql.js meetings, actions, schedules, and local settings plus secret JSON configuration under `.data/` or `MANUSCRIPT_DATA_DIR`.
+- Workflow: real-name speaker mapping, four-column action tracking, month/week scheduling, and Google/ICS deadline export.
+- Exports: rich Notion pages and Obsidian Markdown plus `obsidian://new` deep links.
 
 Primary commands: `pnpm install`, `pnpm run dev`, `pnpm run lint`, `pnpm run test`, `pnpm run build`, and `pnpm run build:ext`.
 

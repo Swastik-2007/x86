@@ -7,9 +7,13 @@ async function request(url, options = {}) {
 }
 
 export const api = {
+  health: () => request('/api/health'),
   meetings: {
     list: () => request('/api/meetings'),
     get: (id) => request(`/api/meetings/${encodeURIComponent(id)}`),
+    renameSpeaker: (id, from, to) => request(`/api/meetings/${encodeURIComponent(id)}/rename-speaker`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }),
+    }),
     upload: (file, metadata = {}) => {
       const form = new FormData();
       form.append('audio', file, file.name || 'meeting.webm');
@@ -24,12 +28,33 @@ export const api = {
     update: (id, patch) => request(`/api/actions/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
     }),
+    create: (values) => request('/api/actions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
+    }),
+    remove: (id) => request(`/api/actions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    calendar: (id) => request(`/api/actions/${encodeURIComponent(id)}/calendar`),
+    calendarDownloadUrl: (id) => `/api/actions/${encodeURIComponent(id)}/calendar?download=1`,
+    notion: (id) => request(`/api/actions/${encodeURIComponent(id)}/export/notion`, { method: 'POST' }),
+    obsidian: (id) => request(`/api/actions/${encodeURIComponent(id)}/export/obsidian`),
+  },
+  calendar: {
+    list: (filters = {}) => request(`/api/calendar?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value))}`),
+    create: (values) => request('/api/calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }),
+    update: (id, values) => request(`/api/calendar/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }),
+    remove: (id) => request(`/api/calendar/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    export: (id) => request(`/api/calendar/${encodeURIComponent(id)}/export`),
+    downloadUrl: (id) => `/api/calendar/${encodeURIComponent(id)}/export?download=1`,
   },
   settings: {
     get: () => request('/api/settings'),
     save: (settings) => request('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }),
   },
   providers: () => request('/api/providers'),
+  localAi: {
+    test: (values) => request('/api/local-ai/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
+    }),
+  },
   exports: {
     notion: (id) => request(`/api/export/notion/${encodeURIComponent(id)}`, { method: 'POST' }),
     obsidian: (id) => request(`/api/export/obsidian/${encodeURIComponent(id)}`),

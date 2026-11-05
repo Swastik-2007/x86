@@ -11,6 +11,9 @@ const defaults = {
   groqApiKey: '', geminiApiKey: '', claudeApiKey: '', sarvamApiKey: '', assemblyAiApiKey: '',
   googleApiKey: '', googleCloudProjectId: '', googleCloudStorageBucket: '', googleCloudStorageKeyPath: '',
   notionToken: '', notionDatabaseId: '', obsidianVault: '',
+  localWhisperUrl: 'http://192.168.64.1:8000', localWhisperModel: 'whisper-1',
+  lmStudioBaseUrl: 'http://192.168.64.1:1234/v1', lmStudioModel: 'lfm2.5-1.2b-instruct',
+  userName: '', defaultParticipants: [],
   autoSyncExports: false, language: 'unknown', enableDiarization: true, minSpeakers: 1, maxSpeakers: 8,
   systemPrompt: '', noteOutputMode: 'json', ffmpegPath: '',
 };

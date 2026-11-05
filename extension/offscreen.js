@@ -46,6 +46,8 @@ async function upload(message) {
   form.append('startedAt', metadata.startedAt);
   form.append('liveNotes', JSON.stringify(message.liveNotes || []));
   form.append('captions', JSON.stringify(message.captions || []));
+  form.append('participants', JSON.stringify(metadata.participants || []));
+  form.append('exportPreferences', JSON.stringify(metadata.exportPreferences || {}));
   const response = await fetch(`${metadata.backendUrl}/api/meetings/upload-audio`, { method: 'POST', body: form });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || `Upload failed (${response.status})`);

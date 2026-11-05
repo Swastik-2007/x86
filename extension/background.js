@@ -3,6 +3,7 @@ let activeMeetingTabId = null;
 let recordingTabId = null;
 let liveNotes = [];
 let captions = [];
+let participantHints = [];
 
 const backendUrl = async () => {
   const stored = await chrome.storage.local.get('backendUrl');
@@ -28,12 +29,16 @@ async function startRecording(message, sender) {
   await ensureOffscreenDocument();
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
   recordingTabId = tabId;
-  liveNotes = [];
+  liveNotes = message.agenda ? [{ kind: 'agenda', text: message.agenda, timestamp: 0 }] : [];
   captions = [];
+  participantHints = Array.isArray(message.participants) ? message.participants : [];
   const url = await backendUrl();
+  const preferences = await chrome.storage.local.get(['autoSyncNotion', 'autoExportObsidian']);
   await chrome.runtime.sendMessage({
     target: 'offscreen', type: 'OFFSCREEN_START', streamId, backendUrl: url,
-    meetingUrl: message.meetingUrl, meetingTitle: message.meetingTitle, startedAt: new Date().toISOString(),
+    meetingUrl: message.meetingUrl, meetingTitle: message.meetingTitle, participants: participantHints,
+    exportPreferences: { notion: Boolean(preferences.autoSyncNotion), obsidian: Boolean(preferences.autoExportObsidian) },
+    startedAt: new Date().toISOString(),
   });
   chrome.action.setBadgeText({ text: 'REC' });
   chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
@@ -70,8 +75,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
       case 'START_RECORDING': return startRecording(message, sender);
       case 'STOP_RECORDING': return stopRecording();
-      case 'LIVE_NOTE': liveNotes.push({ text: message.text, timestamp: message.timestamp }); return { success: true };
+      case 'LIVE_NOTE': liveNotes.push({ kind: message.kind || 'note', text: message.text, timestamp: message.timestamp }); return { success: true };
       case 'CAPTION': captions.push(message.caption); return { success: true };
+      case 'PARTICIPANTS': participantHints = [...new Set([...(participantHints || []), ...(message.participants || [])])]; return { success: true };
       case 'GET_STATUS': return { recording: recordingTabId != null, backendUrl: await backendUrl() };
       case 'CHECK_BACKEND': {
         const response = await fetch(`${await backendUrl()}/api/health`);
@@ -84,6 +90,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const parsed = new URL(await backendUrl());
         parsed.port = '5173';
         chrome.tabs.create({ url: message.meetingId ? `${parsed.origin}/?meeting=${encodeURIComponent(message.meetingId)}` : parsed.origin });
+        return { success: true };
+      }
+      case 'OPEN_ACTIONS': {
+        const parsed = new URL(await backendUrl());
+        parsed.port = '5173';
+        chrome.tabs.create({ url: `${parsed.origin}/?view=actions${message.meetingId ? `&meeting=${encodeURIComponent(message.meetingId)}` : ''}` });
         return { success: true };
       }
       case 'OFFSCREEN_COMPLETE':

@@ -6,6 +6,12 @@ const text = (content) => [{ type: 'text', text: { content: String(content || ''
 const paragraph = (content) => ({ object: 'block', type: 'paragraph', paragraph: { rich_text: text(content) } });
 const heading = (content) => ({ object: 'block', type: 'heading_2', heading_2: { rich_text: text(content) } });
 
+function transcriptLine(segment) {
+  const seconds = Number(segment.startTime) || 0;
+  const stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  return `[${stamp}] ${segment.speaker || 'Unassigned speaker'}: ${segment.text || ''}`;
+}
+
 function actionLabel(action) {
   const due = action.deadline ? ` (Due: ${action.deadline})` : '';
   return `@${action.owner || 'Unassigned'}: ${action.task}${due} · ${action.priority || 'MEDIUM'}`;
@@ -25,7 +31,16 @@ async function syncToNotion(meeting, config) {
   if (!config.notionToken || !config.notionDatabaseId) throw new Error('Notion token and page/database ID are required');
   const notion = new Client({ auth: config.notionToken });
   const structured = meeting.structured || {};
-  const children = [heading('Executive Summary'), paragraph(structured.summary || 'No summary available.')];
+  const participants = [...new Set([
+    ...(structured.attendees || []).map((item) => typeof item === 'string' ? item : (item.name || item.label)),
+    ...(meeting.transcript || []).map((item) => item.speaker),
+  ].filter(Boolean))];
+  const metadata = [
+    `Date: ${String(meeting.started_at || '').slice(0, 10) || 'Unknown'}`,
+    `Participants: ${participants.join(', ') || 'Not identified'}`,
+    meeting.meeting_url ? `Meeting: ${meeting.meeting_url}` : '',
+  ].filter(Boolean).join('\n');
+  const children = [heading('Meeting Metadata'), paragraph(metadata), heading('Executive Summary'), paragraph(structured.summary || 'No summary available.')];
 
   children.push(heading('Decisions Log'));
   for (const decision of structured.decisions || []) {
@@ -38,6 +53,12 @@ async function syncToNotion(meeting, config) {
     children.push({ object: 'block', type: 'to_do', to_do: { rich_text: text(actionLabel(action)), checked: action.status === 'COMPLETED' } });
   }
 
+  const transcriptChildren = (meeting.transcript || []).slice(0, 95).map((segment) => paragraph(transcriptLine(segment)));
+  children.push({
+    object: 'block', type: 'toggle',
+    toggle: { rich_text: text(`Full named transcript (${meeting.transcript?.length || 0} segments)`), children: transcriptChildren.length ? transcriptChildren : [paragraph('No transcript available.')] },
+  });
+
   const parent = await notionParent(notion, config.notionDatabaseId, meeting.title);
   const page = await notion.pages.create({ ...parent, children: children.slice(0, 100) });
   return page.url;
@@ -49,18 +70,21 @@ function yamlValue(value) {
 
 function obsidianExport(meeting, vault = '') {
   const structured = meeting.structured || {};
-  const attendees = (structured.attendees || []).map((item) => typeof item === 'string' ? item : (item.name || item.label)).filter(Boolean);
+  const attendees = [...new Set([
+    ...(structured.attendees || []).map((item) => typeof item === 'string' ? item : (item.name || item.label)),
+    ...(meeting.transcript || []).map((item) => item.speaker),
+  ].filter(Boolean))];
   const date = String(meeting.started_at || new Date().toISOString()).slice(0, 10);
   const lines = [
     '---',
     `title: ${yamlValue(meeting.title)}`,
     `date: ${date}`,
-    `attendees: [${attendees.map(yamlValue).join(', ')}]`,
-    'tags: [meeting, manuscript]',
+    `participants: [${attendees.map(yamlValue).join(', ')}]`,
+    'tags: [manuscript, meeting]',
     '---', '',
     `# ${meeting.title}`, '',
-    '## Executive Summary', '',
-    structured.summary || 'No summary available.', '',
+    '> [!summary] Executive Summary',
+    `> ${String(structured.summary || 'No summary available.').replace(/\n/g, '\n> ')}`, '',
     '## Key Discussion Topics', '',
   ];
   for (const section of structured.topics || []) {
@@ -75,7 +99,7 @@ function obsidianExport(meeting, vault = '') {
   }
   lines.push('## Action Items', '');
   for (const action of meeting.actions || []) {
-    lines.push(`- [${action.status === 'COMPLETED' ? 'x' : ' '}] **@${action.owner || 'Unassigned'}**: ${action.task}${action.deadline ? ` (Due: ${action.deadline})` : ''} · ${action.priority || 'MEDIUM'}`);
+    lines.push(`- [${action.status === 'COMPLETED' ? 'x' : ' '}] **@${action.owner || 'Unassigned'}**: ${action.task}${action.deadline ? ` 📅 ${action.deadline}` : ''} · ${action.priority || 'MEDIUM'}`);
   }
   lines.push('', '## Transcript', '');
   for (const segment of meeting.transcript || []) {
@@ -89,4 +113,4 @@ function obsidianExport(meeting, vault = '') {
   return { markdown, filename, uri };
 }
 
-module.exports = { syncToNotion, obsidianExport };
+module.exports = { syncToNotion, obsidianExport, transcriptLine };

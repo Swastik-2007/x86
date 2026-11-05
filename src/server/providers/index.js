@@ -10,6 +10,7 @@ const sttRegistry = createRegistry('stt', ['transcribe', 'test']);
 const llmRegistry = createRegistry('llm', ['generate', 'test']);
 
 [
+  require('./stt/local-whisper'),
   require('./stt/google'),
   require('./stt/sarvam'),
   require('./stt/assemblyai'),
@@ -17,6 +18,7 @@ const llmRegistry = createRegistry('llm', ['generate', 'test']);
 ].forEach((p) => sttRegistry.register(p));
 
 [
+  require('./llm/lm-studio'),
   require('./llm/gemini'),
   require('./llm/groq'),
   require('./llm/claude'),
