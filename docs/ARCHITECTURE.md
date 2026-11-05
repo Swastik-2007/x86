@@ -55,7 +55,7 @@ When processing completes, the overlay offers Notion export, an Obsidian URI, an
 
 ## Frontend
 
-`renderer/api-client.js` is the single fetch/WebSocket boundary. `renderer/app.jsx` provides capture/upload, recent meetings, structured meeting detail, exports, settings, and the cross-meeting action Kanban. `renderer/lib/browserRecorder.js` implements optional shared-tab audio plus microphone capture with browser APIs.
+`renderer/lib/apiClient.js` is the single fetch/WebSocket boundary. `renderer/app.jsx` provides capture/upload, recent meetings, structured meeting detail, exports, settings, and the cross-meeting action Kanban. `renderer/lib/browserRecorder.js` implements optional shared-tab audio plus microphone capture with browser APIs.
 
 ## Provider libraries
 

@@ -9,6 +9,8 @@ Manuscript is a browser-first meeting intelligence platform for Google Meet and 
 
 The web dashboard also exports meetings to Notion and Obsidian. There is no Electron app and no native system-audio capture.
 
+The repository contains only the active web dashboard, Chrome extension, Node API, and their tests. The interface uses square corners throughout; circular status dots and loading indicators remain circular for meaning and motion.
+
 ## Architecture
 
 - `src/server/` — Express API and WebSocket server on `0.0.0.0:3001`.

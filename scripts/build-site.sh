@@ -1,21 +1,17 @@
 #!/usr/bin/env bash
-# Assembles the GitHub Pages site into ${1:-_site} from site/, docs/ and brand assets.
+# Assembles the static site into ${1:-_site}.
 set -euo pipefail
 OUT="${1:-_site}"
 VERSION=$(node -p "require('./package.json').version")
 DATE=$(date -u +%Y-%m-%d)
 
 rm -rf "$OUT"
-mkdir -p "$OUT/brand" "$OUT/screenshots" "$OUT/fonts"
+mkdir -p "$OUT/fonts"
 cp site/index.html site/sitemap.xml llms.txt "$OUT/"
 cp site/google*.html "$OUT/"
-cp docs/brand/meetmind-wordmark-light.png docs/brand/meetmind-wordmark-dark.png "$OUT/brand/"
-cp docs/brand/social-preview.png "$OUT/og-image.png"
-cp docs/screenshots/*.png "$OUT/screenshots/"
 cp extension/fonts/DMSans-Variable.woff2 extension/fonts/OFL.txt "$OUT/fonts/"
-cp assets/icons/icon.svg "$OUT/icon.svg"
-cp assets/icons/icon32.png "$OUT/icon-32.png"
-cp assets/icons/icon256.png "$OUT/icon-256.png"
+cp extension/icons/icon16.png "$OUT/icon-16.png"
+cp extension/icons/icon128.png "$OUT/icon-128.png"
 touch "$OUT/.nojekyll"
 
 sed -i "s/__VERSION__/${VERSION}/g" "$OUT/index.html"

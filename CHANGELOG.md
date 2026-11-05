@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.0.2] - 2026-11-05
+
+### Changed
+
+- Replaced rounded interface corners with square geometry across the web dashboard, Chrome extension, and static site.
+- Reduced the repository to the active browser, extension, and Node API code paths and removed unused dependencies.
+- Updated the package-manager pin to the signed pnpm 12.16.1 release.
+
+### Removed
+
+- Deleted the retired Electron runtime, native desktop capture and packaging code, desktop-only tests, stale renderer components, obsolete assets, and unused extension launch-protocol files.
+
 ## [6.0.1] - 2026-11-05
 
 ### Fixed

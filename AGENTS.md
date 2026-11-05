@@ -39,7 +39,7 @@ Run lint, tests, the renderer build, and `node scripts/build-extension.js` befor
 
 ## UI work
 
-Read `DESIGN.md` in full before editing anything rendered on screen. Use its DM Sans, slate, indigo, emerald, hairline-border, radius, and zero-shadow rules. Prefer CSS variables and accessible native controls.
+Read `DESIGN.md` in full before editing anything rendered on screen. Use its DM Sans, slate, indigo, emerald, square-corner, hairline-border, and zero-shadow rules. Prefer CSS variables and accessible native controls.
 
 ## Security
 

@@ -23,7 +23,7 @@ export default defineConfig({
   },
   server: {
     // Bind to every interface so the dev renderer can be opened from a host machine's browser
-    // (http://<vm-ip>:5173) as well as inside the VM; Electron still points at localhost.
+    // (http://<vm-ip>:5173) as well as inside the VM.
     host: '0.0.0.0',
     port: 5173,
     strictPort: true,
@@ -31,12 +31,6 @@ export default defineConfig({
     proxy: {
       '^/api/': 'http://127.0.0.1:3001',
       '/ws': { target: 'ws://127.0.0.1:3001', ws: true },
-    },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'renderer'),
-      '@assets': path.resolve(__dirname, 'assets'),
     },
   },
 });
