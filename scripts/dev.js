@@ -1,11 +1,12 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const path = require('node:path');
 
-const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
 const children = [
-  spawn(command, ['run', 'dev:server'], { stdio: 'inherit' }),
-  spawn(command, ['run', 'dev:renderer'], { stdio: 'inherit' }),
+  spawn(process.execPath, ['src/server/index.js'], { stdio: 'inherit' }),
+  spawn(process.execPath, [viteBin, '--host', '0.0.0.0'], { stdio: 'inherit' }),
 ];
 
 let stopping = false;

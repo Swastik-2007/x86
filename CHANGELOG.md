@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.0.1] - 2026-11-05
+
+### Fixed
+
+- Prevented Vite's API proxy from intercepting the browser API-client module, which left the Ubuntu-hosted web app on a blank white screen.
+- Made the combined development launcher start Node and Vite directly on Windows and Linux instead of failing through a platform-specific pnpm child process.
+
 ## [6.0.0] - 2026-11-05
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "manuscript",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "description": "Manuscript — browser-first meeting intelligence with Google Meet capture, structured decisions, action tracking, Notion sync, and Obsidian export.",
   "keywords": ["ai-meeting-notes", "meeting-transcription", "decision-log", "action-tracker", "google-meet", "chrome-extension", "notion", "obsidian", "web-app", "node-api"],
   "homepage": "https://aslahtp.github.io/meetmind/",

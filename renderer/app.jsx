@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, CircleDot, FileAudio, ListChecks, Mic, Settings as SettingsIcon, Upload, Users } from 'lucide-react';
-import { api } from './api-client';
+import { api } from './lib/apiClient';
 import { startBrowserRecording } from './lib/browserRecorder';
 
 const STATUSES = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
