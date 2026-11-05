@@ -15,4 +15,6 @@
 
 ### Fixed
 
+- White screen after the splash when the renderer runs in a plain browser tab: `window.meetmind.capture.onStart` threw because the browser fallback bridge's `capture` namespace wasn't callable through nested property access; the bridge is now a recursive null-safe proxy (`renderer/lib/browserBridge.js`).
+- `pnpm run dev` / `dev:electron` no longer crash on Linux shells without `DISPLAY` (e.g. VS Code terminals in a Wayland session): `scripts/dev-electron.js` auto-detects the session's XWayland display from `/tmp/.X11-unix`, falls back to `xvfb-run` in headless VMs, and otherwise prints an actionable message.
 - Extension packaging staging directory renamed to `manuscript-chrome-extension` alongside the zip output.
