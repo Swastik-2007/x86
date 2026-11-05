@@ -1,40 +1,18 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const dot  = document.getElementById('status-dot');
-  const text = document.getElementById('status-text');
-  const versionBadge = document.getElementById('version-badge');
+const DEFAULT_URL = 'http://localhost:3001';
+const input = document.getElementById('backend-url');
+const status = document.getElementById('status');
+const dot = document.getElementById('dot');
+const error = document.getElementById('error');
+document.getElementById('version').textContent = `v${chrome.runtime.getManifest().version}`;
 
-  // Display current extension version from manifest
-  try {
-    const manifest = chrome.runtime.getManifest();
-    if (manifest?.version && versionBadge) {
-      versionBadge.textContent = `v${manifest.version}`;
-    }
-  } catch (_e) {}
-
-  // Check status from background
-  chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (status) => {
-    if (chrome.runtime.lastError) {
-      dot.className  = 'dot disconnected';
-      text.textContent = 'Extension error';
-      return;
-    }
-
-    if (status?.wsConnected) {
-      dot.className  = 'dot connected';
-      text.textContent = 'Connected to desktop app';
-    } else {
-      dot.className  = 'dot disconnected';
-      text.textContent = 'Desktop app not running';
-    }
+function check() {
+  status.textContent = 'Checking backend…'; dot.className = '';
+  chrome.runtime.sendMessage({ type: 'CHECK_BACKEND' }, (response) => {
+    if (response?.success) { status.textContent = 'Backend connected'; dot.className = 'connected'; error.textContent = ''; }
+    else { status.textContent = 'Backend unavailable'; dot.className = 'error-dot'; error.textContent = response?.error || 'Check the server URL and network.'; }
   });
+}
 
-  document.getElementById('open-app-btn').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_APP' });
-    window.close();
-  });
-
-  document.getElementById('go-to-meet-btn').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'https://meet.google.com' });
-    window.close();
-  });
-});
+chrome.storage.local.get('backendUrl').then((stored) => { input.value = stored.backendUrl || DEFAULT_URL; check(); });
+document.getElementById('save').addEventListener('click', async () => { await chrome.storage.local.set({ backendUrl: input.value.trim().replace(/\/$/, '') || DEFAULT_URL }); check(); });
+document.getElementById('open-web').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'OPEN_WEB' }, () => window.close()));

@@ -1,819 +1,176 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  Mic,
-  X,
-  Minus,
-  Square,
-  LayoutDashboard,
-  CalendarDays,
-  Settings as SettingsIcon,
-  ScrollText,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, CircleDot, FileAudio, ListChecks, Mic, Settings as SettingsIcon, Upload, Users } from 'lucide-react';
+import { api } from './api-client';
+import { startBrowserRecording } from './lib/browserRecorder';
 
-import Dashboard from './components/Dashboard.jsx';
-import Meetings from './components/Meetings.jsx';
-import NoteViewer from './components/NoteViewer.jsx';
-import Settings from './components/Settings.jsx';
-import ProcessingIndicator from './components/ProcessingIndicator.jsx';
-import UpdateIndicator from './components/UpdateIndicator.jsx';
-import { AppContext, useApp } from './lib/app-context.js';
-import { getSetupState } from './lib/providers.js';
-import { markScrollRestore, cancelScrollRestore } from './lib/scrollMemory.js';
-import LogsViewer from './components/LogsViewer.jsx';
-import RecordingBar from './components/RecordingBar.jsx';
-import { audioMeter } from './lib/audioMeter.js';
-import { isMac, isWindows } from './lib/os.js';
-import { StatusDot, useConfirmDialog } from './components/ui/index.jsx';
+const STATUSES = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
+const statusNames = { PENDING: 'Pending', IN_PROGRESS: 'In Progress', COMPLETED: 'Completed' };
 
-// ── Toast System ──────────────────────────────────────────────────────────────
+function formatDate(value) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
 
-const TOAST_TONE = {
-  warning: 'warning',
-  info:    'ink',
-  success: 'ok',
-  error:   'error',
-};
+function Nav({ view, setView }) {
+  return <header className="topbar">
+    <button className="brand" onClick={() => setView('dashboard')}><span className="brand-mark"><Mic size={18} /></span><span>Manuscript</span></button>
+    <nav aria-label="Primary navigation">
+      <button className={view === 'dashboard' ? 'active' : ''} onClick={() => setView('dashboard')}>Meetings</button>
+      <button className={view === 'actions' ? 'active' : ''} onClick={() => setView('actions')}><ListChecks size={16} /> Action Tracker</button>
+      <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}><SettingsIcon size={16} /> Settings</button>
+    </nav>
+  </header>;
+}
 
-function Toast({ id, message, type = 'info', action, onDismiss }) {
-  const [visible, setVisible] = useState(false);
+function CaptureCard({ busy, progress, onProcessed }) {
+  const [recording, setRecording] = useState(null);
+  const [startedAt, setStartedAt] = useState(null);
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState('');
+  const fileRef = useRef(null);
 
-  useEffect(() => {
-    const enterTimer = requestAnimationFrame(() => setVisible(true));
-    const exitTimer = setTimeout(() => {
-      setVisible(false);
-      setTimeout(() => onDismiss(id), 200);
-    }, action ? 8000 : 5000);
-    return () => {
-      cancelAnimationFrame(enterTimer);
-      clearTimeout(exitTimer);
-    };
-  }, [id, onDismiss, action]);
+  const processFile = async (file, metadata = {}) => {
+    setError('');
+    try {
+      const result = await api.meetings.upload(file, { title: title || file.name.replace(/\.[^.]+$/, ''), ...metadata });
+      await onProcessed(result.meeting);
+    } catch (uploadError) { setError(uploadError.message); }
+  };
 
-  const dismiss = () => { setVisible(false); setTimeout(() => onDismiss(id), 200); };
+  const start = async (includeTab) => {
+    setError('');
+    try {
+      setRecording(await startBrowserRecording({ includeTab }));
+      setStartedAt(new Date().toISOString());
+    } catch (captureError) { setError(captureError.message); }
+  };
 
-  return (
-    <div
-      className={`floating rounded-image flex items-start gap-16 px-16 py-16 w-[360px] max-w-full transition-all duration-200 ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-      }`}
-      role={type === 'error' ? 'alert' : 'status'}
-    >
-      <StatusDot tone={TOAST_TONE[type] || 'ink'} className="mt-4" />
-      <div className="flex-1 min-w-0">
-        <p className="text-caption text-ink">{message}</p>
-        {action && (
-          <button
-            type="button"
-            className="mt-8 text-caption font-medium text-ink underline underline-offset-4"
-            onClick={() => { action.onClick(); dismiss(); }}
-          >
-            {action.label}
-          </button>
-        )}
-      </div>
-      <button type="button" onClick={dismiss} className="text-graphite hover:text-ink" aria-label="Dismiss notification">
-        <X size={16} strokeWidth={1.75} />
-      </button>
+  const stop = async () => {
+    const active = recording;
+    setRecording(null);
+    try {
+      const blob = await active.stop();
+      await processFile(new File([blob], `manuscript-${Date.now()}.webm`, { type: blob.type }), { startedAt });
+    } catch (captureError) { setError(captureError.message); }
+  };
+
+  return <section className="capture-card" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const [file] = event.dataTransfer.files; if (file) processFile(file); }}>
+    <div><span className="eyebrow">1 · Capture</span><h2>{recording ? 'Recording in this browser' : 'Turn the meeting into decisions'}</h2><p>Record microphone and shared-tab audio, or drop an existing WebM, MP3, WAV, M4A, or OGG file.</p></div>
+    <label className="field"><span>Meeting title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Weekly product review" /></label>
+    {progress && <div className="progress"><div style={{ width: `${progress.percent}%` }} /><span>{progress.stage} · {progress.percent}%</span></div>}
+    <div className="capture-actions">
+      {recording
+        ? <button className="primary" onClick={stop}>Stop & process</button>
+        : <button className="primary" disabled={busy} onClick={() => start(true)}><Mic size={17} /> Record tab + mic</button>}
+      {!recording && <button className="ghost" disabled={busy} onClick={() => start(false)}>Mic only</button>}
+      {!recording && <button className="ghost" disabled={busy} onClick={() => fileRef.current?.click()}><Upload size={17} /> Upload audio</button>}
+      <input ref={fileRef} type="file" accept="audio/*,video/webm" hidden onChange={(event) => event.target.files[0] && processFile(event.target.files[0])} />
     </div>
-  );
+    {error && <p className="error" role="alert">{error}</p>}
+  </section>;
 }
 
-function ToastContainer({ toasts, onDismiss }) {
-  return (
-    <div className="fixed bottom-24 right-24 z-[90] flex flex-col gap-8 pointer-events-none" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className="pointer-events-auto">
-          <Toast {...t} onDismiss={onDismiss} />
-        </div>
-      ))}
-    </div>
-  );
+function Dashboard({ meetings, progress, openMeeting, refresh }) {
+  return <main className="page">
+    <section className="hero"><span className="eyebrow">P8 · Meeting Intelligence</span><h1>Every discussion becomes an accountable record.</h1><p>Structured summaries, evidence-backed decisions, assigned responsibilities, and one global pending-action tracker.</p></section>
+    <CaptureCard busy={Boolean(progress)} progress={progress} onProcessed={async (meeting) => { await refresh(); openMeeting(meeting.id); }} />
+    <section><div className="section-title"><div><span className="eyebrow">2 · Review</span><h2>Recent meetings</h2></div><span className="count">{meetings.length}</span></div>
+      <div className="meeting-grid">{meetings.length ? meetings.map((meeting) => <button className="meeting-card" key={meeting.id} onClick={() => openMeeting(meeting.id)}>
+        <div className={`status-dot ${meeting.status.toLowerCase()}`} /><div><h3>{meeting.title}</h3><p>{formatDate(meeting.started_at)}</p><span>{meeting.structured?.decisions?.length || 0} decisions · {meeting.status}</span></div>
+      </button>) : <div className="empty"><FileAudio size={30} /><h3>No meetings yet</h3><p>Record in the browser, upload audio, or use the Chrome extension in Google Meet.</p></div>}</div>
+    </section>
+  </main>;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const THEMES = ['light', 'dark', 'system'];
-
-function normalizeTheme(value) {
-  return THEMES.includes(value) ? value : 'light';
+function MeetingView({ meeting, back, refresh }) {
+  const [notice, setNotice] = useState('');
+  if (!meeting) return <main className="page"><div className="empty">Loading meeting…</div></main>;
+  const syncNotion = async () => { try { const result = await api.exports.notion(meeting.id); setNotice('Synced to Notion'); window.open(result.url, '_blank', 'noopener'); await refresh(); } catch (error) { setNotice(error.message); } };
+  const openObsidian = async () => { try { const result = await api.exports.obsidian(meeting.id); window.location.href = result.uri; setNotice('Sent to Obsidian'); } catch (error) { setNotice(error.message); } };
+  return <main className="page meeting-page">
+    <button className="text-button" onClick={back}>← All meetings</button>
+    <section className="meeting-heading"><div><span className="eyebrow">Meeting intelligence</span><h1>{meeting.title}</h1><p>{formatDate(meeting.started_at)} · {meeting.transcript?.length || 0} transcript segments</p></div>
+      <div className="export-actions"><button className="primary" onClick={syncNotion}>Sync to Notion</button><button className="ghost" onClick={openObsidian}>Open in Obsidian</button><a className="ghost button-link" href={api.exports.downloadUrl(meeting.id)}>Download .md</a></div>
+    </section>
+    {notice && <p className="notice">{notice}</p>}
+    <section className="summary-card"><span className="eyebrow">Structured summary</span><p>{meeting.structured?.summary || 'Summary is not available.'}</p></section>
+    <section><div className="section-title"><div><span className="eyebrow">Decision log</span><h2>Identified decisions</h2></div><span className="count">{meeting.structured?.decisions?.length || 0}</span></div>
+      <div className="decision-list">{(meeting.structured?.decisions || []).map((decision, index) => <article className="decision-card" key={`${decision.decision}-${index}`}><CheckCircle2 size={20} /><div><h3>{decision.decision || decision.text}</h3>{decision.context && <p>{decision.context}</p>}{decision.quote && <blockquote>“{decision.quote}” <span>{decision.timestamp}</span></blockquote>}</div></article>)}</div>
+    </section>
+    <section><div className="section-title"><div><span className="eyebrow">Responsibilities</span><h2>Assigned actions</h2></div><span className="count">{meeting.actions?.length || 0}</span></div>
+      <div className="action-table">{(meeting.actions || []).map((action) => <div className="action-row" key={action.id}><CircleDot size={16} /><strong>@{action.owner}</strong><span>{action.task}</span><span className="tag">{action.priority}</span><span>{action.deadline || 'No deadline'}</span></div>)}</div>
+    </section>
+  </main>;
 }
 
-function getEffectiveTheme(themeSetting) {
-  if (themeSetting === 'system') {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'light';
-  }
-  return themeSetting === 'dark' ? 'dark' : 'light';
+function ActionTracker({ actions, refresh }) {
+  const [owner, setOwner] = useState('');
+  const owners = useMemo(() => [...new Set(actions.map((action) => action.owner))].sort(), [actions]);
+  const visible = owner ? actions.filter((action) => action.owner === owner) : actions;
+  const move = async (id, status) => { await api.actions.update(id, { status }); await refresh(); };
+  return <main className="page"><section className="hero compact"><span className="eyebrow">P8 · Pending Action Tracker</span><h1>Accountability across every meeting.</h1><p>Filter by owner, update status, or drag responsibilities between columns.</p></section>
+    <label className="field owner-filter"><span>Filter by person</span><select value={owner} onChange={(event) => setOwner(event.target.value)}><option value="">Everyone</option>{owners.map((name) => <option key={name}>{name}</option>)}</select></label>
+    <div className="kanban">{STATUSES.map((status) => <section className="kanban-column" key={status} onDragOver={(event) => event.preventDefault()} onDrop={(event) => move(event.dataTransfer.getData('text/action-id'), status)}>
+      <div className="column-title"><h2>{statusNames[status]}</h2><span className="count">{visible.filter((action) => action.status === status).length}</span></div>
+      {visible.filter((action) => action.status === status).map((action) => <article className="task-card" key={action.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/action-id', action.id)}>
+        <span className="tag">{action.priority}</span><h3>{action.task}</h3><p><Users size={14} /> @{action.owner}</p><small>{action.meeting_title} · {action.deadline || 'No deadline'}</small>
+        <select aria-label={`Status for ${action.task}`} value={action.status} onChange={(event) => move(action.id, event.target.value)}>{STATUSES.map((value) => <option key={value} value={value}>{statusNames[value]}</option>)}</select>
+      </article>)}
+    </section>)}</div>
+  </main>;
 }
 
-function applyTheme(themeSetting) {
-  if (typeof document === 'undefined') return;
-  const effective = getEffectiveTheme(themeSetting);
-  document.documentElement.classList.toggle('dark', effective === 'dark');
-  document.documentElement.classList.toggle('light', effective === 'light');
+function SettingsView({ settings, providers, onSave }) {
+  const [form, setForm] = useState(settings || {});
+  const [notice, setNotice] = useState('');
+  useEffect(() => setForm(settings || {}), [settings]);
+  const field = (key) => ({ value: form[key] || '', onChange: (event) => setForm((current) => ({ ...current, [key]: event.target.value })) });
+  const save = async (event) => { event.preventDefault(); try { await onSave(form); setNotice('Settings saved'); } catch (error) { setNotice(error.message); } };
+  return <main className="page settings-page"><section className="hero compact"><span className="eyebrow">Settings</span><h1>Connect your intelligence stack.</h1><p>API keys stay in the backend data directory and never enter the extension package.</p></section>
+    <form onSubmit={save} className="settings-grid">
+      <section className="settings-card"><h2>Transcription</h2><label className="field"><span>Provider</span><select {...field('sttService')}>{(providers?.stt || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+        <label className="field"><span>Groq API key</span><input type="password" {...field('groqApiKey')} /></label><label className="field"><span>Sarvam API key</span><input type="password" {...field('sarvamApiKey')} /></label><label className="field"><span>AssemblyAI API key</span><input type="password" {...field('assemblyAiApiKey')} /></label><label className="field"><span>Google STT API key</span><input type="password" {...field('googleApiKey')} /></label><label className="field"><span>Google Cloud project ID (optional)</span><input {...field('googleCloudProjectId')} /></label></section>
+      <section className="settings-card"><h2>Summaries & decisions</h2><label className="field"><span>LLM provider</span><select {...field('llmProvider')}>{(providers?.llm || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
+        <label className="field"><span>Gemini API key</span><input type="password" {...field('geminiApiKey')} /></label><label className="field"><span>Anthropic API key</span><input type="password" {...field('claudeApiKey')} /></label></section>
+      <section className="settings-card"><h2>Exports</h2><label className="field"><span>Notion integration token</span><input type="password" {...field('notionToken')} /></label><label className="field"><span>Notion page or database ID</span><input {...field('notionDatabaseId')} /></label><label className="field"><span>Obsidian vault name</span><input {...field('obsidianVault')} /></label>
+        <label className="toggle"><input type="checkbox" checked={Boolean(form.autoSyncExports)} onChange={(event) => setForm((current) => ({ ...current, autoSyncExports: event.target.checked }))} /><span>Auto-sync to Notion & prepare Obsidian after every Google Meet</span></label></section>
+      <div className="form-footer"><button className="primary" type="submit">Save settings</button>{notice && <span className="notice">{notice}</span>}</div>
+    </form>
+  </main>;
 }
-
-// ── Root App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [view, rawSetView] = useState('dashboard');        // 'dashboard' | 'meetings' | 'session' | 'settings' | 'logs'
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [sessionOrigin, setSessionOrigin] = useState('dashboard');
-  const [sessions, setSessions] = useState([]);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionsError, setSessionsError] = useState(null);
-  const [config, setConfigState] = useState(null);
-  const [providers, setProviders] = useState(null);      // STT/LLM provider descriptors from main
-  const [theme, setThemeState] = useState('light');
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingSessionId, setRecordingSessionId] = useState(null);
-  const [recordingStartedAt, setRecordingStartedAt] = useState(null);
-  const [processing, setProcessing] = useState(null);      // { sessionId, stage, percent } | null
-  const [notesPreview, setNotesPreview] = useState(null);  // { sessionId, attempt, provider, model, notes } | null
-  const [updaterState, setUpdaterState] = useState(null);
-  const [toasts, setToasts] = useState([]);
+  const [view, setView] = useState('dashboard');
+  const [meetings, setMeetings] = useState([]);
+  const [actions, setActions] = useState([]);
+  const [settings, setSettings] = useState(null);
+  const [providers, setProviders] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [progress, setProgress] = useState(null);
 
-  const navGuardRef = useRef(null);
-  const processingSessionRef = useRef(null);
-  const viewRef = useRef(view);
-  viewRef.current = view;
-
-  const { confirm, element: confirmElement } = useConfirmDialog();
-
-  const addToast = useCallback((message, type = 'info', action) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setToasts((prev) => [...prev.slice(-2), { id, message, type, action }]); // max 3 visible
+  const refresh = useCallback(async () => {
+    const [meetingList, actionList] = await Promise.all([api.meetings.list(), api.actions.list()]);
+    setMeetings(meetingList); setActions(actionList);
   }, []);
-
-  const dismissToast = useCallback((id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+  useEffect(() => { refresh(); Promise.all([api.settings.get(), api.providers()]).then(([nextSettings, nextProviders]) => { setSettings(nextSettings); setProviders(nextProviders); }); }, [refresh]);
+  useEffect(() => {
+    const meetingId = new URLSearchParams(location.search).get('meeting');
+    if (!meetingId) return;
+    api.meetings.get(meetingId).then((meeting) => { setSelected(meeting); setView('meeting'); }).catch(() => {});
   }, []);
-
-  // Views that hold unsaved state (Settings) register a guard; every navigation
-  // goes through it so edits are never discarded silently.
-  const setNavGuard = useCallback((guard) => {
-    navGuardRef.current = guard;
-  }, []);
-
-  const requestNavigate = useCallback(async (nextView) => {
-    if (nextView === viewRef.current) return true;
-    if (navGuardRef.current) {
-      const ok = await navGuardRef.current();
-      if (!ok) return false;
-    }
-    rawSetView(nextView);
-    return true;
-  }, []);
-
-  const trackProcessing = useCallback((sessionId) => {
-    processingSessionRef.current = sessionId;
-    setNotesPreview((prev) => (prev?.sessionId === sessionId ? prev : null));
-    // A progress event can arrive before the caller learns the session id
-    // (e.g. pasted transcripts start at "generating") — keep any stage we have.
-    setProcessing((prev) => ({
-      sessionId,
-      stage: prev?.stage || 'transcribing',
-      percent: prev?.percent || 0,
-    }));
-  }, []);
-
-  const setup = getSetupState(providers, config);
-  const keysNotSet = setup.ready && (!setup.sttDone || !setup.llmDone);
-
-  // Request microphone access at startup so Windows adds this app to the
-  // Privacy → Microphone list and allows FFmpeg (a desktop app) to capture audio.
-  // Windows only: on macOS this would raise the permission prompt at every launch.
-  useEffect(() => {
-    if (!isWindows || !navigator.mediaDevices?.getUserMedia) return;
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => { stream.getTracks().forEach((t) => t.stop()); })
-      .catch(() => { /* permission denied — user will see guidance in Settings */ });
-  }, []);
-
-  // ── Renderer-based audio capture (system loopback + mic via Web Audio) ─────
-  // The AnalyserNodes tap each channel independently and a rAF loop pushes RMS
-  // levels into `audioLevels` state for the RecordingBar's live meters.
-  useEffect(() => {
-    if (!window.meetmind?.capture) return;
-
-    let mediaRecorder = null;
-    let streams = [];
-    let ctx = null;
-    let meterRafId = null;
-    let sysAnalyser = null;
-    let micAnalyser = null;
-
-    // ── Level-metering loop ──────────────────────────────────────────────────
-    function startMeterLoop() {
-      const sysData = sysAnalyser ? new Float32Array(sysAnalyser.fftSize) : null;
-      const micData = micAnalyser ? new Float32Array(micAnalyser.fftSize) : null;
-
-      function rms(buf) {
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-        return Math.sqrt(sum / buf.length);
-      }
-
-      // Throttle to ~30 fps to avoid hammering React state.
-      let last = 0;
-      function tick(ts) {
-        meterRafId = requestAnimationFrame(tick);
-        if (ts - last < 33) return;
-        last = ts;
-
-        let sysLevel = 0;
-        let micLevel = 0;
-        if (sysAnalyser && sysData) {
-          sysAnalyser.getFloatTimeDomainData(sysData);
-          sysLevel = Math.min(1, rms(sysData) * 4); // ×4 gain for visual clarity
-        }
-        if (micAnalyser && micData) {
-          micAnalyser.getFloatTimeDomainData(micData);
-          micLevel = Math.min(1, rms(micData) * 4);
-        }
-        audioMeter.emit({ mic: micLevel, system: sysLevel });
-      }
-      meterRafId = requestAnimationFrame(tick);
-    }
-
-    function stopMeterLoop() {
-      if (meterRafId != null) {
-        cancelAnimationFrame(meterRafId);
-        meterRafId = null;
-      }
-      sysAnalyser = null;
-      micAnalyser = null;
-      audioMeter.reset();
-    }
-
-    // System audio via Electron loopback. getDisplayMedia must ask for video too; that track is
-    // stopped at once. Returns null when the OS gives no system audio (permission denied, or no
-    // audio track). When main can capture it with FFmpeg instead (`requireSystemAudio`: Windows
-    // WASAPI, Linux PulseAudio) we fail so it falls back; otherwise the caller records the mic alone.
-    async function openSystemStream(requireSystemAudio) {
-      try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
-        stream.getVideoTracks().forEach((t) => t.stop());
-        if (stream.getAudioTracks().length > 0) return stream;
-        stream.getTracks().forEach((t) => t.stop());
-        if (requireSystemAudio) throw new Error('System audio capture returned no audio track');
-      } catch (err) {
-        if (requireSystemAudio) throw err;
-        console.warn('System audio unavailable, recording microphone only:', err);
-      }
-      return null;
-    }
-
-    window.meetmind.capture.onStart(async ({ requireSystemAudio = isWindows } = {}) => {
-      try {
-        const sysStream = await openSystemStream(requireSystemAudio);
-
-        let micStream = null;
-        try {
-          micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch { /* mic unavailable — system audio only */ }
-
-        if (!sysStream && !micStream) throw new Error('No audio source available (microphone access denied?)');
-
-        streams = [sysStream, micStream].filter(Boolean);
-
-        ctx = new AudioContext();
-        const dest = ctx.createMediaStreamDestination();
-
-        // System audio — source → analyser → dest
-        if (sysStream) {
-          const sysSource = ctx.createMediaStreamSource(sysStream);
-          sysAnalyser = ctx.createAnalyser();
-          sysAnalyser.fftSize = 256;
-          sysSource.connect(sysAnalyser);
-          sysSource.connect(dest);
-        }
-
-        // Microphone — source → analyser → dest
-        if (micStream) {
-          const micSource = ctx.createMediaStreamSource(micStream);
-          micAnalyser = ctx.createAnalyser();
-          micAnalyser.fftSize = 256;
-          micSource.connect(micAnalyser);
-          micSource.connect(dest);
-        }
-
-        startMeterLoop();
-
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm';
-        mediaRecorder = new MediaRecorder(dest.stream, { mimeType });
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            e.data.arrayBuffer().then((buffer) => {
-              if (buffer.byteLength > 0) {
-                window.meetmind.capture.sendChunk(buffer);
-              }
-            }).catch((err) => {
-              console.error('Failed to send audio chunk:', err);
-            });
-          }
-        };
-        // Emit chunks every 1 second (1000ms) for real-time disk streaming
-        mediaRecorder.start(1000);
-
-        window.meetmind.capture.sendStarted({ systemAudio: !!sysStream, mic: !!micStream });
-        if (!sysStream) {
-          addToast(isMac
-            ? 'Recording your microphone only: system audio is unavailable. Check Screen & System Audio Recording permission.'
-            : 'Recording your microphone only: system audio is unavailable. Check that PulseAudio or PipeWire is running.', 'warning');
-        }
-      } catch (err) {
-        console.error('Renderer audio capture failed:', err);
-        stopMeterLoop();
-        window.meetmind.capture.sendFailed(err.message);
-      }
-    });
-
-    window.meetmind.capture.onStop(async () => {
-      stopMeterLoop();
-      try {
-        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-          window.meetmind.capture.sendAudioData(new ArrayBuffer(0));
-          return;
-        }
-
-        await new Promise((resolve) => {
-          mediaRecorder.onstop = resolve;
-          mediaRecorder.stop();
-        });
-
-        streams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
-        streams = [];
-        if (ctx) { ctx.close().catch(() => {}); ctx = null; }
-
-        // Short timeout to allow pending arrayBuffer microtasks to send
-        await new Promise((r) => setTimeout(r, 150));
-
-        // Send zero-length sentinel to signal "recording complete"
-        window.meetmind.capture.sendAudioData(new ArrayBuffer(0));
-      } catch (err) {
-        console.error('Renderer capture stop failed:', err);
-        window.meetmind.capture.sendAudioData(new ArrayBuffer(0));
-      }
-    });
-  }, [addToast]); // addToast is stable, so the listeners are registered once
-
-  // The database revision the current `sessions` list was read at (see sessions:revision).
-  const sessionsRevisionRef = useRef(null);
-
-  // Re-reads every session, with full transcripts (several MB for a few hundred meetings). With
-  // { ifChanged: true }, as the Dashboard and Meetings pages do each time they open, it first
-  // asks main whether anything was written since the last read and stops there if not, so
-  // switching tabs doesn't copy and re-render the whole list for nothing.
-  const refreshSessions = useCallback(async ({ ifChanged = false } = {}) => {
-    if (!window.meetmind) return;
-    try {
-      const revision = await window.meetmind.sessions.revision?.();
-      if (ifChanged && revision != null && revision === sessionsRevisionRef.current) return;
-      const list = await window.meetmind.sessions.list();
-      sessionsRevisionRef.current = revision ?? null;
-      setSessions(list);
-      setSessionsError(null);
-    } catch (err) {
-      console.error('Failed to load sessions:', err);
-      setSessionsError(err.message || 'Failed to load meetings');
-    }
-  }, []);
-
-  // Load config and sessions on mount
-  useEffect(() => {
-    // Never let the loading state strand the UI: if the bridge is missing or a
-    // call rejects/never settles, fall through to the real view rather than
-    // leaving placeholders on screen forever.
-    const failsafe = setTimeout(() => setSessionsLoading(false), 5000);
-
-    async function init() {
-      if (!window.meetmind) return;
-      window.meetmind.providers?.list?.().then(setProviders).catch((err) => {
-        console.error('Provider list load failed:', err);
-      });
-      try {
-        const cfg = await window.meetmind.config.get();
-        setConfigState(cfg);
-        const initialTheme = normalizeTheme(cfg?.theme);
-        setThemeState(initialTheme);
-        applyTheme(initialTheme);
-      } catch (err) {
-        console.error('Config load failed:', err);
-      }
-      await refreshSessions();
-    }
-
-    init().finally(() => {
-      clearTimeout(failsafe);
-      setSessionsLoading(false);
-    });
-
-    return () => clearTimeout(failsafe);
-  }, [refreshSessions]);
-
-  // Follow OS theme changes when theme is set to 'system'
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleSystemThemeChange = () => {
-      if (theme === 'system') applyTheme('system');
-    };
-    mediaQuery.addEventListener?.('change', handleSystemThemeChange);
-    return () => mediaQuery.removeEventListener?.('change', handleSystemThemeChange);
-  }, [theme]);
-
-  // Opens a finished session — unless the current view holds unsaved state, in
-  // which case the user gets a toast with an "Open" action instead.
-  const showFinishedSession = useCallback(async (session) => {
-    if (navGuardRef.current) {
-      addToast(`Notes are ready for “${session.title || 'your meeting'}”.`, 'success', {
-        label: 'Open notes',
-        onClick: async () => {
-          if (await requestNavigate('session')) setSelectedSession(session);
-        },
-      });
-      return;
-    }
-    setSelectedSession(session);
-    rawSetView('session');
-  }, [addToast, requestNavigate]);
-
-  // Register event listeners
-  useEffect(() => {
-    if (!window.meetmind) return;
-
-    const unsubRecordingStarted = window.meetmind.on('recording:started', ({ sessionId }) => {
-      setIsRecording(true);
-      setRecordingSessionId(sessionId);
-      setRecordingStartedAt((prev) => prev || Date.now());
-    });
-
-    // Stops can come from the button, the tray, the meeting overlay or the extension — the pipeline
-    // always follows, so start tracking its progress here.
-    const unsubRecordingStopped = window.meetmind.on('recording:stopped', ({ sessionId } = {}) => {
-      setIsRecording(false);
-      setRecordingStartedAt(null);
-      if (sessionId) trackProcessing(sessionId);
-    });
-
-    const unsubProgress = window.meetmind.on('processing:progress', ({ stage, percent }) => {
-      if (stage === 'complete') return;
-      setProcessing({ sessionId: processingSessionRef.current, stage, percent });
-    });
-
-    // Notes streamed so far while the LLM writes them (see generateNotes' onPreview).
-    const unsubPreview = window.meetmind.on('notes:preview', (preview) => {
-      setNotesPreview(preview);
-    });
-    // Cleared only once the finished session is loaded, so old notes don't flash back in between.
-    const clearPreview = (sessionId) => {
-      setNotesPreview((prev) => (!sessionId || prev?.sessionId === sessionId ? null : prev));
-    };
-
-    const unsubComplete = window.meetmind.on('processing:complete', async ({ sessionId }) => {
-      setProcessing(null);
-      processingSessionRef.current = null;
-      await refreshSessions();
-      if (sessionId) {
-        const session = await window.meetmind.sessions.get(sessionId);
-        if (session) showFinishedSession(session);
-      }
-      clearPreview(sessionId);
-    });
-
-    const unsubError = window.meetmind.on('processing:error', async ({ sessionId, error }) => {
-      setProcessing(null);
-      processingSessionRef.current = null;
-      await refreshSessions();
-      if (sessionId) {
-        const session = await window.meetmind.sessions.get(sessionId);
-        if (session) showFinishedSession({ ...session, _processingError: error });
-      }
-      clearPreview(sessionId);
-    });
-
-    // Pipeline was cancelled because the session was deleted mid-flight.
-    const unsubCancelled = window.meetmind.on('processing:cancelled', ({ sessionId } = {}) => {
-      setProcessing(null);
-      clearPreview(sessionId);
-      processingSessionRef.current = null;
-      refreshSessions();
-    });
-
-    const unsubDurations = window.meetmind.on('sessions:durations-updated', async () => {
-      const updated = await window.meetmind.sessions.list();
-      setSessions(updated);
-      setSelectedSession((prev) => {
-        if (!prev?.id) return prev;
-        const next = updated.find((s) => s.id === prev.id);
-        return next ? { ...next, _processingError: prev._processingError } : prev;
-      });
-    });
-
-    const unsubUpdater = window.meetmind.on('updater:status', (status) => {
-      setUpdaterState(status);
-    });
-
-    const unsubFallback = window.meetmind.on('llm:fallback-used', ({ primaryModel, fallbackModel }) => {
-      addToast(
-        `Primary model (${primaryModel}) failed — switched to ${fallbackModel} automatically.`,
-        'warning'
-      );
-    });
-
-    window.meetmind.updater?.getStatus().then((status) => {
-      if (status) setUpdaterState(status);
-    });
-
-    return () => {
-      unsubRecordingStarted?.();
-      unsubRecordingStopped?.();
-      unsubProgress?.();
-      unsubPreview?.();
-      unsubComplete?.();
-      unsubError?.();
-      unsubCancelled?.();
-      unsubDurations?.();
-      unsubUpdater?.();
-      unsubFallback?.();
-    };
-  }, [addToast, refreshSessions, showFinishedSession, trackProcessing]);
-
-  const openSession = useCallback(async (session) => {
-    const origin = viewRef.current === 'meetings' ? 'meetings' : 'dashboard';
-    // requestNavigate skips the guard for the current view, so switching from one
-    // meeting to another (e.g. from the processing pill) checks for unsaved edits here.
-    if (viewRef.current === 'session' && navGuardRef.current && !(await navGuardRef.current())) return;
-    if (!(await requestNavigate('session'))) return;
-    setSessionOrigin(origin);
-    setSelectedSession(session);
-  }, [requestNavigate]);
-
-  const openSessionById = useCallback(async (sessionId) => {
-    if (!sessionId) return;
-    const session = await window.meetmind.sessions.get(sessionId);
-    if (session) openSession(session);
-  }, [openSession]);
-
-  // "Open notes" on the desktop meeting overlay.
-  useEffect(() => {
-    if (!window.meetmind) return undefined;
-    return window.meetmind.on('app:open-session', ({ sessionId } = {}) => openSessionById(sessionId));
-  }, [openSessionById]);
-
-  // macOS app menu (e.g. Settings… ⌘,).
-  useEffect(() => {
-    if (!window.meetmind) return undefined;
-    return window.meetmind.on('app:navigate', (nextView) => {
-      if (['dashboard', 'meetings', 'settings', 'logs'].includes(nextView)) requestNavigate(nextView);
-    });
-  }, [requestNavigate]);
-
-  const updateConfig = async (key, value) => {
-    await window.meetmind.config.set(key, value);
-    setConfigState((prev) => ({ ...prev, [key]: value }));
-    if (key === 'theme') {
-      const t = normalizeTheme(value);
-      setThemeState(t);
-      applyTheme(t);
-    }
-  };
-
-  const updateMultipleConfig = async (updates) => {
-    if (window.meetmind?.config?.setMultiple) {
-      await window.meetmind.config.setMultiple(updates);
-    } else {
-      for (const [k, v] of Object.entries(updates)) {
-        await window.meetmind.config.set(k, v);
-      }
-    }
-    const fresh = await window.meetmind.config.get();
-    setConfigState(fresh || ((prev) => ({ ...prev, ...updates })));
-    if ('theme' in updates) {
-      const t = normalizeTheme(updates.theme);
-      setThemeState(t);
-      applyTheme(t);
-    }
-  };
-
-  const setTheme = async (newTheme) => {
-    const validTheme = normalizeTheme(newTheme);
-    setThemeState(validTheme);
-    applyTheme(validTheme);
-    await updateConfig('theme', validTheme);
-  };
-
-  // `meeting` ({ meetingUrl, meetingTitle }) names the session after a calendar event; buttons
-  // that call this as a click handler pass an event object, which is ignored.
-  const startRecording = async (meeting) => {
-    const fromCalendar = typeof meeting?.meetingTitle === 'string';
-    const result = fromCalendar
-      ? await window.meetmind.recording.start(undefined, meeting.meetingUrl || undefined, meeting.meetingTitle)
-      : await window.meetmind.recording.start();
-    if (result?.success) {
-      setIsRecording(true);
-      setRecordingSessionId(result.sessionId);
-      setRecordingStartedAt(Date.now());
-    } else if (result?.error) {
-      addToast(result.error, 'error');
-    }
-    return result;
-  };
-
-  const stopRecording = async () => {
-    const result = await window.meetmind.recording.stop();
-    if (result?.success) {
-      setIsRecording(false);
-      setRecordingStartedAt(null);
-    } else if (result?.error) {
-      addToast(result.error, 'error');
-    }
-    return result;
-  };
-
-  const ctx = {
-    view,
-    setView: requestNavigate,
-    selectedSession, setSelectedSession,
-    sessions, setSessions, refreshSessions, sessionsLoading, sessionsError,
-    config, setConfigState, updateConfig, updateMultipleConfig,
-    providers, setup,
-    theme, setTheme,
-    isRecording, recordingSessionId, recordingStartedAt,
-    startRecording, stopRecording,
-    processing, trackProcessing, notesPreview,
-    updaterState,
-    openSession, openSessionById,
-    addToast,
-    confirm,
-    setNavGuard,
-    keysNotSet,
-  };
-
-  return (
-    <AppContext.Provider value={ctx}>
-      <div className="flex flex-col h-screen overflow-hidden bg-paper text-ink">
-        <TopBar />
-
-        {isRecording && (
-          <RecordingBar startedAt={recordingStartedAt} onStop={stopRecording} />
-        )}
-
-        <main className="flex-1 min-h-0 overflow-hidden">
-          {view === 'dashboard' && (
-            <Dashboard
-              onOpenSession={openSession}
-              onNavigateToSettings={() => requestNavigate('settings')}
-              onNavigateToMeetings={() => requestNavigate('meetings')}
-            />
-          )}
-          {view === 'meetings' && (
-            <Meetings onOpenSession={openSession} />
-          )}
-          {view === 'session' && selectedSession && (
-            <NoteViewer
-              key={selectedSession.id}
-              session={selectedSession}
-              onBack={async () => {
-                // Return to the list where it was scrolled, not the top.
-                markScrollRestore(sessionOrigin);
-                if (!(await requestNavigate(sessionOrigin))) cancelScrollRestore(sessionOrigin);
-              }}
-              onRefresh={async () => {
-                const updated = await window.meetmind.sessions.get(selectedSession.id);
-                if (updated) setSelectedSession(updated);
-                refreshSessions();
-              }}
-            />
-          )}
-          {view === 'settings' && (
-            <Settings onSave={updateMultipleConfig} />
-          )}
-          {view === 'logs' && (
-            <LogsViewer />
-          )}
-        </main>
-      </div>
-
-
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      {confirmElement}
-    </AppContext.Provider>
-  );
-}
-
-// ── Top bar (wordmark + navigation + window controls) ────────────────────────
-
-const NAV_ITEMS = [
-  { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { view: 'meetings',  label: 'Meetings',  icon: CalendarDays },
-  { view: 'settings',  label: 'Settings',  icon: SettingsIcon },
-  { view: 'logs',      label: 'Logs',      icon: ScrollText },
-];
-
-function TopBar() {
-  const {
-    view, setView, isRecording, startRecording, config, keysNotSet,
-    processing, openSessionById, updaterState,
-  } = useApp();
-
-  const items = NAV_ITEMS.filter((item) => item.view !== 'logs' || !config?.hideLogsInSidebar);
-  const activeView = view === 'session' ? null : view;
-  // The processing pill sizes itself to the free space this spacer represents.
-  const spacerRef = useRef(null);
-
-  return (
-    // macOS keeps its native traffic lights (inset by main.js at x 24); the bar starts after them
-    // and has no custom window buttons on the right.
-    <header className={`titlebar-drag flex-shrink-0 h-64 flex items-center gap-16 lg:gap-24 ${isMac ? 'pl-[96px] pr-24' : 'pl-24'} border-b border-ink bg-paper select-none`}>
-      {/* Wordmark */}
-      <div className="flex items-center gap-16 flex-shrink-0">
-        <div className="flex items-center gap-8 flex-shrink-0">
-          <span className="tile w-32 h-32 inline-flex items-center justify-center" aria-hidden="true">
-            <Mic size={16} strokeWidth={2} />
-          </span>
-          <span className="hidden lg:inline text-body-sm font-medium text-ink">Manuscript</span>
-        </div>
-        {/* Subtle brand tagline, kept out of the way until the window is wide enough. */}
-        <span className="hidden xl:inline-flex pill-quiet" aria-label="Decision and Action Intelligence">
-          Decision &amp; Action Intelligence
-        </span>
-      </div>
-
-      {/* Navigation */}
-      <nav aria-label="Main" className="titlebar-no-drag flex items-center gap-4">
-        {items.map((item) => {
-          const active = activeView === item.view;
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.view}
-              type="button"
-              onClick={() => setView(item.view)}
-              aria-current={active ? 'page' : undefined}
-              className={`inline-flex items-center rounded-full px-8 lg:px-16 py-8 text-caption font-medium transition-colors duration-200 ease-out border ${
-                active
-                  ? 'bg-ink text-paper border-ink'
-                  : 'text-graphite border-transparent hover:text-ink'
-              }`}
-            >
-              {/* Only the current page shows its icon. It stays mounted and its width, gap and
-                  opacity animate, so pills resize smoothly instead of snapping when it appears. */}
-              <span
-                aria-hidden="true"
-                className={`inline-flex items-center overflow-hidden transition-[max-width,margin-right,opacity] duration-200 ease-out ${
-                  active ? 'max-w-[14px] mr-8 opacity-100' : 'max-w-[0px] mr-0 opacity-0'
-                }`}
-              >
-                <Icon size={14} strokeWidth={1.75} className="flex-shrink-0" />
-              </span>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div ref={spacerRef} className="flex-1" />
-
-      {/* Status + actions: the app-update pill and the live processing pill (both animate in and
-          out; the update one opens a panel), then Record, the app's
-          primary action (yellow; ink while the Dashboard's setup card holds the yellow instead).
-          Spacing is per-item margins, not `gap`, so the collapsed pill slot leaves no extra space. */}
-      <div className="titlebar-no-drag flex items-center">
-        <UpdateIndicator state={updaterState} />
-        <ProcessingIndicator processing={processing} onOpen={openSessionById} spacerRef={spacerRef} />
-
-        {!isRecording && (
-          <button type="button" onClick={startRecording} className={`${keysNotSet ? 'btn-ink' : 'btn-sunshine'} btn-sm ml-8`}>
-            <span className="dot dot-sm dot-signal" aria-hidden="true" />
-            Record
-          </button>
-        )}
-      </div>
-
-      {!isMac && <WindowControls />}
-    </header>
-  );
-}
-
-function WindowControls() {
-  const base = 'h-64 w-48 flex items-center justify-center text-graphite transition-colors duration-150';
-  return (
-    <div className="titlebar-no-drag flex items-stretch h-full flex-shrink-0">
-      <button type="button" onClick={() => window.meetmind?.window?.minimize()} className={`${base} hover:text-ink hover:bg-ink/[0.06]`} aria-label="Minimize window">
-        <Minus size={14} strokeWidth={1.75} />
-      </button>
-      <button type="button" onClick={() => window.meetmind?.window?.maximize()} className={`${base} hover:text-ink hover:bg-ink/[0.06]`} aria-label="Maximize or restore window">
-        <Square size={12} strokeWidth={1.75} />
-      </button>
-      <button type="button" onClick={() => window.meetmind?.window?.close()} className={`${base} hover:text-paper hover:bg-signal`} aria-label="Close window">
-        <X size={14} strokeWidth={1.75} />
-      </button>
-    </div>
-  );
+  useEffect(() => api.events((event) => {
+    if (event.type === 'processing') setProgress(event.percent >= 100 ? null : event);
+    if (event.type === 'processing-error') setProgress(null);
+    if (event.type === 'action-updated') refresh();
+  }), [refresh]);
+
+  const openMeeting = async (id) => { setSelected(await api.meetings.get(id)); setView('meeting'); };
+  const refreshSelected = async () => { await refresh(); if (selected) setSelected(await api.meetings.get(selected.id)); };
+
+  return <><Nav view={view} setView={(next) => { setView(next); if (next !== 'meeting') setSelected(null); }} />
+    {view === 'dashboard' && <Dashboard meetings={meetings} progress={progress} openMeeting={openMeeting} refresh={refresh} />}
+    {view === 'meeting' && <MeetingView meeting={selected} back={() => setView('dashboard')} refresh={refreshSelected} />}
+    {view === 'actions' && <ActionTracker actions={actions} refresh={refresh} />}
+    {view === 'settings' && <SettingsView settings={settings} providers={providers} onSave={async (next) => setSettings(await api.settings.save(next))} />}
+  </>;
 }

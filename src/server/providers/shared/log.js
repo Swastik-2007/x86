@@ -1,8 +1,8 @@
-// Lazy, failure-tolerant logger so provider modules stay importable outside Electron (unit tests).
+// Lazy, failure-tolerant logger so provider modules stay importable in tests and the Node API.
 let real;
 function getLogger() {
   if (real === undefined) {
-    try { real = require('../../utils/logger'); } catch { real = null; }
+    try { real = require('../../logger'); } catch { real = null; }
   }
   return real;
 }

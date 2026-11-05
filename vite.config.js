@@ -18,7 +18,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'renderer/index.html'),
-        overlay: path.resolve(__dirname, 'renderer/overlay.html'),
       },
     },
   },
@@ -29,6 +28,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     cors: true,
+    proxy: {
+      '/api': 'http://127.0.0.1:3001',
+      '/ws': { target: 'ws://127.0.0.1:3001', ws: true },
+    },
   },
   resolve: {
     alias: {

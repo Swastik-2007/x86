@@ -1,5 +1,22 @@
 # Changelog
 
+## [6.0.0] - 2026-11-05
+
+### Added
+
+- Express/WebSocket API on port 3001 with meeting, audio-upload, action-tracker, settings, provider-test, Notion, and Obsidian routes.
+- Browser dashboard recording and audio upload, evidence-backed decision views, global drag/toggle action tracker, and one-click Notion/Obsidian exports.
+- Chrome MV3 Google Meet tab-and-microphone capture through an offscreen MediaRecorder, timestamped live notes, caption fallback, and configurable backend URL.
+
+### Changed
+
+- Replaced the Electron desktop runtime with a browser-first React/Vite frontend and Node.js server, including server-side FFmpeg upload normalization and sql.js persistence.
+- Updated the meeting intelligence schema to emphasize structured summaries, exact decision quotes and timestamps, assigned owners, priorities, deadlines, and tracker status.
+
+### Removed
+
+- Electron, electron-builder, electron-store, electron-updater, koffi, fluent-ffmpeg, desktop packaging scripts, and native OS audio-capture dependencies.
+
 ## [5.0.0] - 2026-11-05
 
 ### Added

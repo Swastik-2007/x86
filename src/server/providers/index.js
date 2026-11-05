@@ -1,6 +1,6 @@
 /**
  * The single place providers are registered. To add an engine:
- *   1. create electron/providers/{stt|llm}/<name>.js (see docs/ADDING_PROVIDERS.md)
+ *   1. create src/server/providers/{stt|llm}/<name>.js (see docs/ADDING_PROVIDERS.md)
  *   2. add one line below
  *   3. add an icon in renderer/components/settings/providers/providerIcons.js
  */
