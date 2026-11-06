@@ -16,26 +16,15 @@ const PREVIEW_INTERVAL_MS = 100;
 
 /** A custom prompt wins; otherwise the default for the configured output mode. */
 function resolveSystemPrompt(config) {
-  const custom = config.geminiSystemPrompt || config.systemPrompt || '';
+  const custom = config.systemPrompt || '';
   if (custom.trim()) return custom;
   return config.noteOutputMode === 'markdown' ? DEFAULT_MD_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT;
 }
 
-/** Primary target plus the optional cross-provider fallback, as {provider, model}. */
+/** The single local LM Studio target. */
 function resolveTargets(config) {
-  const primary = llmRegistry.get(config.llmProvider || llmRegistry.defaultId());
-  const targets = [{
-    provider: primary,
-    model: llmRegistry.resolveModel(primary, config.llmModels?.[primary.id]),
-  }];
-
-  const fb = config.llmFallback;
-  if (fb && llmRegistry.has(fb.provider)) {
-    const provider = llmRegistry.get(fb.provider);
-    const model = llmRegistry.resolveModel(provider, fb.model);
-    if (provider.id !== primary.id || model !== targets[0].model) targets.push({ provider, model });
-  }
-  return targets;
+  const provider = llmRegistry.get('lm-studio');
+  return [{ provider, model: String(config.lmStudioModel || provider.defaultModel).trim() }];
 }
 
 /**
@@ -94,13 +83,6 @@ async function generateNotes(transcript, config, { meetingTitle = '', onPreview 
   let primaryError = null;
   for (let i = 0; i < targets.length; i++) {
     const { provider, model } = targets[i];
-    if (!llmRegistry.isConfigured(provider, config)) {
-      const err = new Error(`${provider.name} API key is required`);
-      if (i === targets.length - 1) throw primaryError || err;
-      primaryError = primaryError || err;
-      continue;
-    }
-
     logger.info('Generating meeting notes', {
       provider: provider.id,
       model,

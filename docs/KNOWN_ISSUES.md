@@ -1,6 +1,7 @@
 # Known issues
 
 - Chrome tab capture must be initiated by an explicit user click in the Google Meet overlay.
+- Chrome does not expose dashboard `getDisplayMedia`/`getUserMedia` on `http://<ubuntu-vm-ip>:5173` because it is not a secure context. Use the Chrome extension for Meet capture, HTTPS, or a localhost SSH tunnel; file upload remains available.
 - Chrome or macOS may deny microphone access to an extension offscreen document. Manuscript continues with tab audio when available.
 - Visible Google Meet captions are best-effort backup evidence because Meet's DOM is not a public API and can change.
 - The API uses permissive development CORS and has no built-in user authentication. Keep it on a trusted LAN for demos or place it behind an authenticated TLS reverse proxy.

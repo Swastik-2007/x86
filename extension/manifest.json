@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Manuscript — Google Meet Intelligence",
-  "version": "7.0.0",
+  "version": "7.1.1",
   "description": "Record Google Meet tab audio and microphone, capture live notes, and send meetings to your Manuscript web server.",
   "short_name": "Manuscript",
   "permissions": [

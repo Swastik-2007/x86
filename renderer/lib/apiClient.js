@@ -14,6 +14,7 @@ export const api = {
     renameSpeaker: (id, from, to) => request(`/api/meetings/${encodeURIComponent(id)}/rename-speaker`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to }),
     }),
+    summarize: (id) => request(`/api/meetings/${encodeURIComponent(id)}/summarize`, { method: 'POST' }),
     upload: (file, metadata = {}) => {
       const form = new FormData();
       form.append('audio', file, file.name || 'meeting.webm');
@@ -51,7 +52,7 @@ export const api = {
   },
   providers: () => request('/api/providers'),
   localAi: {
-    test: (values) => request('/api/local-ai/test', {
+    test: (values) => request('/api/settings/test-local-ai', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
     }),
   },

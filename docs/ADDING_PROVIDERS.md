@@ -1,10 +1,10 @@
-# Adding providers
+# Maintaining Local AI engines
 
-Provider libraries are registered in `src/server/providers/index.js` and consumed by the Node API. They must remain runtime-neutral.
+Manuscript is intentionally Local-AI-only. `src/server/providers/index.js` registers exactly the MacBook MLX Whisper and LM Studio engines. Do not add a cloud provider or credential requirement to capture, upload, transcription, or note generation.
 
 ## STT provider
 
-Create `src/server/providers/stt/<id>.js` exporting metadata plus:
+The active `src/server/providers/stt/local-whisper.js` exports metadata plus:
 
 ```js
 async function transcribe({ wavPath, model, config, onProgress }) {
@@ -14,13 +14,11 @@ async function transcribe({ wavPath, model, config, onProgress }) {
 async function test({ config, model }) {}
 ```
 
-Register it in the `sttRegistry` list. Uploaded audio is already mono 16 kHz WAV.
-
-The built-in `local-whisper` provider is the exception that receives the original upload path so it can send multipart audio to the configured Mac service. Keep local/network probing in `src/server/local-ai.js`; do not add browser-only APIs to provider code.
+Uploaded audio is mono 16 kHz WAV. The client sends it as multipart `file` with the hardwired MLX model and bilingual prompt. Keep gateway/fallback probing in `src/server/local-ai.js`; do not add browser-only APIs to provider code.
 
 ## LLM provider
 
-Create `src/server/providers/llm/<id>.js` exporting metadata plus:
+The active `src/server/providers/llm/lm-studio.js` exports metadata plus:
 
 ```js
 async function generate({ systemPrompt, userPrompt, model, config, json, onText }) {
@@ -30,8 +28,8 @@ async function generate({ systemPrompt, userPrompt, model, config, json, onText 
 async function test({ config, model }) {}
 ```
 
-Register it in the `llmRegistry` list. The P8 structured schema is owned by `src/server/pipeline.js`; providers should not weaken or rewrite it.
+The P8 structured schema and bilingual rules are owned by `src/server/pipeline.js`; the engine must not weaken or rewrite them.
 
 OpenAI-compatible local providers should normalize base URLs rather than require users to type `/chat/completions` exactly. Route all model text through `src/server/notes/json-extract.js` so fenced or conversational JSON is handled consistently.
 
-Add secret credential keys to `src/server/config.js`. Add non-secret local endpoint/model settings to `LOCAL_SETTING_KEYS` in `src/server/local-ai.js` so they persist in SQLite. Expose the setting in `renderer/app.jsx`, update README and architecture docs, and add tests. Run `pnpm run lint`, `pnpm run test`, `pnpm run build:renderer`, and `node scripts/build-extension.js`.
+Add only non-secret local endpoint/model settings to `LOCAL_SETTING_KEYS` in `src/server/local-ai.js` so they persist in SQLite. Expose the setting in `renderer/app.jsx`, update README and architecture docs, and add tests. Run `pnpm run lint`, `pnpm run test`, `pnpm run build:renderer`, and `node scripts/build-extension.js`.

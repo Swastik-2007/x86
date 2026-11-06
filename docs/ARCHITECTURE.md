@@ -6,7 +6,7 @@
 Google Meet tab ── Chrome MV3/offscreen MediaRecorder ─┐
 Meet captions / browser upload ────────────────────────┼─ Express API :3001
                                                        ↓
-   FFmpeg normalize → Local/cloud STT → caption/name merge → Local/cloud LLM
+   FFmpeg normalize → Mac MLX Whisper → caption/name merge → Mac LM Studio LFM3
                                                        ↓
                 sql.js meetings + actions + schedules + local settings
                                                        ↓
@@ -26,6 +26,7 @@ The server binds to `0.0.0.0:3001`; Vite binds to `0.0.0.0:5173` and proxies `/a
 | GET | `/api/meetings/:id` | Meeting, transcript, structured intelligence, and actions. |
 | POST | `/api/meetings/upload-audio` | Multipart `audio` upload plus title, URL, live notes, captions, and start time. |
 | POST | `/api/meetings/from-captions` | Process named Meet captions without an audio upload. |
+| POST | `/api/meetings/:id/summarize` | Regenerate local-AI intelligence from the stored transcript. |
 | PATCH | `/api/meetings/:id/rename-speaker` | Atomically rename a speaker through transcript, structured notes, captions, and actions. |
 | GET/POST | `/api/actions` | Filter or create actions; filters include `status`, `owner`, `priority`, and `meetingId`. |
 | PATCH | `/api/actions/:id` | Update task, owner, priority, deadline, or tracker status. |
@@ -34,7 +35,8 @@ The server binds to `0.0.0.0:3001`; Vite binds to `0.0.0.0:5173` and proxies `/a
 | GET/POST/PATCH/DELETE | `/api/calendar[/:id]` | Scheduled meeting CRUD. |
 | GET | `/api/calendar/:id/export` | Return a Google Calendar link or `?download=1` scheduled-meeting ICS. |
 | GET/POST | `/api/settings` | Read or update local provider/export settings. |
-| POST | `/api/local-ai/test` | Probe Python Whisper and LM Studio from the Ubuntu backend. |
+| POST | `/api/local-ai/test` | Probe Python Whisper and LM Studio without changing saved settings. |
+| POST | `/api/settings/test-local-ai` | Auto-detect gateway/fallback endpoints, test them, and save working Local AI settings. |
 | GET | `/api/providers` | Serializable provider descriptors. |
 | POST | `/api/providers/test` | Test one STT or LLM provider. |
 | POST | `/api/export/notion/:meetingId` | Create a Notion page with summary, decision callouts, and to-do blocks. |
@@ -45,15 +47,15 @@ The server binds to `0.0.0.0:3001`; Vite binds to `0.0.0.0:5173` and proxies `/a
 
 1. Multer writes WebM, MP3, WAV, M4A, or OGG uploads under `.data/uploads/`.
 2. `src/server/audio.js` runs server-side FFmpeg to produce mono 16 kHz PCM WAV. This is format normalization, not audio capture.
-3. The selected STT provider returns timestamped speaker segments. Local Python Whisper tries the configured endpoint and supported multipart paths; named Meet captions can be the only transcript or a hybrid name/evidence source.
-4. The selected LLM receives the transcript and timestamped live notes. LM Studio uses its OpenAI-compatible chat endpoint. The JSON extractor accepts fenced/conversational output, repairs common local-model syntax, and requests one repair completion when needed.
+3. The hardwired MLX Whisper client sends multipart `file`, `mlx-community/whisper-large-v3-turbo`, language mode, and an English/Hindi initial prompt. It tries the configured endpoint, detected Ubuntu gateway, UTM defaults, and localhost; named Meet captions are the empty-audio/error fallback and a hybrid name/evidence source.
+4. The hardwired LM Studio client queries `/v1/models`, uses `lfm3-1.7b` when exact or the first loaded ID, and prefers native `/api/v1/chat` with reasoning off and a 180-second timeout. It falls back to OpenAI-compatible chat with an 8,192-token budget, strips think tags, repairs common local-model syntax, and preserves a transcript-derived overview when a reasoning-only response contains no final answer.
 5. The P8 schema requires an executive summary, complete topics, decisions with exact quotes and timestamps, and actions with owners, priority, deadline, and optional source evidence.
 6. `src/server/database.js` stores meetings, global actions, schedules, and non-secret local/profile settings. Action status values are `PENDING`, `IN_PROGRESS`, `BLOCKED`, and `COMPLETED`.
 7. Progress and mutation events are broadcast over `/ws`. Optional automatic export syncs Notion and prepares the Obsidian deep link.
 
 ## Persistence
 
-`sql.js` holds SQLite in memory and rewrites `.data/manuscript.db` on mutation. Local service URLs/model IDs, profile names, and schedules live in SQLite; `.data/config.json` stores provider/export credentials. `MANUSCRIPT_DATA_DIR` relocates both. The API should not be exposed publicly without an authenticated reverse proxy and TLS.
+`sql.js` holds SQLite in memory and rewrites `.data/manuscript.db` on mutation. Local service URLs/model IDs, profile names, and schedules live in SQLite; `.data/config.json` stores optional Notion/workspace-sync configuration. `MANUSCRIPT_DATA_DIR` relocates both. The API should not be exposed publicly without an authenticated reverse proxy and TLS.
 
 ## Chrome extension
 
@@ -67,6 +69,6 @@ The Calendar page can open a Meet URL with title, participant, and agenda contex
 
 ## Provider libraries
 
-Provider modules are self-describing CommonJS objects with metadata, credentials, models, `test()`, and either `transcribe()` or `generate()`. They are registered in `src/server/providers/index.js` and are runtime-neutral.
+The only registered provider modules are `local-whisper` and `lm-studio`. They are self-describing CommonJS objects with models, `test()`, and either `transcribe()` or `generate()`, and remain runtime-neutral. Cloud provider modules and SDK dependencies are intentionally absent.
 
 See [ADDING_PROVIDERS.md](ADDING_PROVIDERS.md).

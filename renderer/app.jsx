@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, CalendarDays, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, CircleDot, Cpu, Download, ExternalLink, FileAudio, ListChecks, Mic, Plus, Puzzle, Settings as SettingsIcon, Trash2, Upload, Users, Workflow } from 'lucide-react';
 import { api } from './lib/apiClient';
-import { startBrowserRecording } from './lib/browserRecorder';
+import { getBrowserCaptureSupport, startBrowserRecording } from './lib/browserRecorder';
 
 const STATUSES = ['PENDING', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED'];
 const statusNames = { PENDING: 'Pending', IN_PROGRESS: 'In Progress', BLOCKED: 'Blocked', COMPLETED: 'Completed' };
@@ -40,17 +40,21 @@ function Nav({ view, setView }) {
   </header>;
 }
 
-function CaptureCard({ busy, progress, onProcessed }) {
+function CaptureCard({ busy, progress, onProcessed, settings }) {
   const [recording, setRecording] = useState(null);
   const [startedAt, setStartedAt] = useState(null);
   const [title, setTitle] = useState('');
   const [error, setError] = useState('');
+  const [language, setLanguage] = useState(settings?.transcriptionLanguage || 'hinglish');
   const fileRef = useRef(null);
+  const tabCapture = getBrowserCaptureSupport({ includeTab: true });
+  const micCapture = getBrowserCaptureSupport();
+  useEffect(() => { if (settings?.transcriptionLanguage) setLanguage(settings.transcriptionLanguage); }, [settings]);
 
   const processFile = async (file, metadata = {}) => {
     setError('');
     try {
-      const result = await api.meetings.upload(file, { title: title || file.name.replace(/\.[^.]+$/, ''), ...metadata });
+      const result = await api.meetings.upload(file, { title: title || file.name.replace(/\.[^.]+$/, ''), language, ...metadata });
       showToast('Audio uploaded. Manuscript is processing the meeting.');
       await onProcessed(result.meeting);
     } catch (uploadError) { setError(uploadError.message); }
@@ -75,13 +79,14 @@ function CaptureCard({ busy, progress, onProcessed }) {
 
   return <section className="capture-card" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const [file] = event.dataTransfer.files; if (file) processFile(file); }}>
     <div><span className="eyebrow">1 · Capture</span><h2>{recording ? 'Recording in this browser' : 'Turn the meeting into decisions'}</h2><p>Record microphone and shared-tab audio, or drop an existing WebM, MP3, WAV, M4A, or OGG file.</p></div>
-    <label className="field"><span>Meeting title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Weekly product review" /></label>
+    <div className="capture-fields"><label className="field"><span>Meeting title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Weekly product review" /></label><label className="field"><span>Transcription language</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="hinglish">English + Hindi (Hinglish)</option><option value="en">English only</option><option value="hi">Hindi</option></select></label></div>
+    {(!tabCapture.supported || !micCapture.supported) && <div className="capture-warning" role="note"><strong>Direct browser recording is unavailable on this address.</strong><p>{tabCapture.reason || micCapture.reason}</p><p>On your Mac, open Google Meet and record with the Manuscript Chrome extension. Uploading an existing recording still works here.</p></div>}
     {progress && <div className="progress"><div style={{ width: `${progress.percent}%` }} /><span>{progress.stage} · {progress.percent}%</span></div>}
     <div className="capture-actions">
       {recording
         ? <button className="primary" onClick={stop} title="Stop capture and send this recording to the backend">Stop & process</button>
-        : <button className="primary" disabled={busy} onClick={() => start(true)} title="Record the chosen browser tab and your microphone"><Mic size={17} /> Record tab + mic</button>}
-      {!recording && <button className="ghost" disabled={busy} onClick={() => start(false)} title="Record only your microphone in this browser">Mic only</button>}
+        : <button className="primary" disabled={busy || !tabCapture.supported} onClick={() => start(true)} title={tabCapture.supported ? 'Record the chosen browser tab and your microphone' : tabCapture.reason}><Mic size={17} /> Record tab + mic</button>}
+      {!recording && <button className="ghost" disabled={busy || !micCapture.supported} onClick={() => start(false)} title={micCapture.supported ? 'Record only your microphone in this browser' : micCapture.reason}>Mic only</button>}
       {!recording && <button className="ghost" disabled={busy} onClick={() => fileRef.current?.click()} title="Upload an existing meeting recording"><Upload size={17} /> Upload audio</button>}
       <input ref={fileRef} type="file" accept="audio/*,video/webm" hidden onChange={(event) => event.target.files[0] && processFile(event.target.files[0])} />
     </div>
@@ -89,10 +94,10 @@ function CaptureCard({ busy, progress, onProcessed }) {
   </section>;
 }
 
-function Dashboard({ meetings, progress, openMeeting, refresh }) {
+function Dashboard({ meetings, progress, openMeeting, refresh, settings }) {
   return <main className="page">
     <section className="hero"><span className="eyebrow">P8 · Meeting Intelligence</span><h1>Every discussion becomes an accountable record.</h1><p>Structured summaries, evidence-backed decisions, assigned responsibilities, and one global pending-action tracker.</p></section>
-    <CaptureCard busy={Boolean(progress)} progress={progress} onProcessed={async (meeting) => { await refresh(); openMeeting(meeting.id); }} />
+    <CaptureCard busy={Boolean(progress)} progress={progress} settings={settings} onProcessed={async (meeting) => { await refresh(); openMeeting(meeting.id); }} />
     <section><div className="section-title"><div><span className="eyebrow">2 · Review</span><h2>Recent meetings</h2></div><span className="count">{meetings.length}</span></div>
       <div className="meeting-grid">{meetings.length ? meetings.map((meeting) => <button className="meeting-card" key={meeting.id} onClick={() => openMeeting(meeting.id)}>
         <div className={`status-dot ${meeting.status.toLowerCase()}`} /><div><h3>{meeting.title}</h3><p>{formatDate(meeting.started_at)}</p><span>{meeting.structured?.decisions?.length || 0} decisions · {meeting.status}</span></div>
@@ -106,9 +111,14 @@ function MeetingView({ meeting, back, refresh, settings }) {
   const [renameFrom, setRenameFrom] = useState('');
   const [renameTo, setRenameTo] = useState('');
   if (!meeting) return <main className="page"><div className="empty">Loading meeting…</div></main>;
+  const summary = meeting.summary || meeting.structured?.summary || '';
+  const topics = meeting.topics?.length ? meeting.topics : (meeting.structured?.topics || []);
+  const attendees = meeting.attendees?.length ? meeting.attendees : (meeting.structured?.attendees || []);
+  const decisions = meeting.decisions?.length ? meeting.decisions : (meeting.structured?.decisions || []);
+  const actions = meeting.action_items?.length ? meeting.action_items : (meeting.actions || []);
   const speakers = [...new Set([
     ...(meeting.transcript || []).map((segment) => segment.speaker),
-    ...(meeting.structured?.attendees || []).flatMap((attendee) => typeof attendee === 'string' ? [attendee] : [attendee.name, attendee.label]),
+    ...attendees.flatMap((attendee) => typeof attendee === 'string' ? [attendee] : [attendee.name, attendee.label]),
   ].filter(Boolean))];
   const knownNames = [...new Set([settings?.userName, ...(settings?.defaultParticipants || [])].filter(Boolean))];
   const renameSpeaker = async (event) => {
@@ -123,22 +133,24 @@ function MeetingView({ meeting, back, refresh, settings }) {
   };
   const syncNotion = async () => { try { const result = await api.exports.notion(meeting.id); setNotice('Synced to Notion'); showToast('Meeting synced to Notion.'); window.open(result.url, '_blank', 'noopener'); await refresh(); } catch (error) { setNotice(error.message); } };
   const openObsidian = async () => { try { const result = await api.exports.obsidian(meeting.id); window.location.href = result.uri; setNotice('Sent to Obsidian'); showToast('Opening this meeting in Obsidian.'); } catch (error) { setNotice(error.message); } };
+  const regenerateSummary = async () => { try { setNotice('Regenerating bilingual meeting intelligence with local LFM3…'); await api.meetings.summarize(meeting.id); await refresh(); setNotice('Executive summary, topics, decisions, and actions regenerated.'); showToast('AI summary regenerated with local LFM3.'); } catch (error) { setNotice(error.message); } };
   return <main className="page meeting-page">
     <button className="text-button" onClick={back}>← All meetings</button>
     <section className="meeting-heading"><div><span className="eyebrow">Meeting intelligence</span><h1>{meeting.title}</h1><p>{formatDate(meeting.started_at)} · {meeting.transcript?.length || 0} transcript segments</p></div>
-      <div className="export-actions"><button className="primary" onClick={syncNotion} title="Create a rich Notion page with decisions, tasks, and transcript">Sync to Notion</button><button className="ghost" onClick={openObsidian} title="Open Obsidian on this Mac and create the meeting note">Open in Obsidian App</button><a className="ghost button-link" href={api.exports.downloadUrl(meeting.id)} onClick={() => setNotice('Downloading a clean Markdown note for your vault.')} title="Download the Markdown file without opening Obsidian">Download `.md` for Vault</a></div>
+      <div className="export-actions"><button className="primary" onClick={regenerateSummary} title="Run local LFM3 again on the saved transcript">Regenerate AI Summary</button><button className="ghost" onClick={syncNotion} title="Create a rich Notion page with decisions, tasks, and transcript">Sync to Notion</button><button className="ghost" onClick={openObsidian} title="Open Obsidian on this Mac and create the meeting note">Open in Obsidian App</button><a className="ghost button-link" href={api.exports.downloadUrl(meeting.id)} onClick={() => setNotice('Downloading a clean Markdown note for your vault.')} title="Download the Markdown file without opening Obsidian">Download `.md` for Vault</a></div>
     </section>
     {notice && <p className="notice">{notice}</p>}
     <section className="speaker-roster"><div><span className="eyebrow">Speaker roster</span><h2>Rename speakers once, update every record</h2><p>Select a transcript label, enter the real participant name, and Manuscript updates decisions and responsibilities too.</p></div>
       <div className="speaker-list">{speakers.map((speaker) => <button type="button" className={renameFrom === speaker ? 'speaker-chip active' : 'speaker-chip'} key={speaker} onClick={() => { setRenameFrom(speaker); setRenameTo(''); }}>{speaker}</button>)}</div>
       {renameFrom && <form className="rename-form" onSubmit={renameSpeaker}><label className="field"><span>Rename {renameFrom} to</span><input autoFocus list="known-participants" value={renameTo} onChange={(event) => setRenameTo(event.target.value)} placeholder="Priya" /></label><datalist id="known-participants">{knownNames.map((name) => <option key={name} value={name} />)}</datalist><button className="primary" type="submit">Save speaker name</button><button className="ghost" type="button" onClick={() => setRenameFrom('')}>Cancel</button></form>}
     </section>
-    <section className="summary-card"><span className="eyebrow">Structured summary</span><p>{meeting.structured?.summary || 'Summary is not available.'}</p></section>
-    <section><div className="section-title"><div><span className="eyebrow">Decision log</span><h2>Identified decisions</h2></div><span className="count">{meeting.structured?.decisions?.length || 0}</span></div>
-      <div className="decision-list">{(meeting.structured?.decisions || []).map((decision, index) => <article className="decision-card" key={`${decision.decision}-${index}`}><CheckCircle2 size={20} /><div><h3>{decision.decision || decision.text}</h3>{decision.context && <p>{decision.context}</p>}{decision.quote && <blockquote>“{decision.quote}” <span>{decision.timestamp}</span></blockquote>}</div></article>)}</div>
+    <section className="summary-card"><span className="eyebrow">Structured summary</span><p>{summary || 'Summary is not available.'}</p></section>
+    <section><div className="section-title"><div><span className="eyebrow">Bilingual topics</span><h2>What the meeting covered</h2></div><span className="count">{topics.length}</span></div><div className="topic-list">{topics.map((topic, index) => <article className="topic-card" key={`${topic.heading || index}`}><h3>{topic.heading || `Topic ${index + 1}`}</h3><p>{topic.content || topic.summary || String(topic)}</p></article>)}</div></section>
+    <section><div className="section-title"><div><span className="eyebrow">Decision log</span><h2>Identified decisions</h2></div><span className="count">{decisions.length}</span></div>
+      <div className="decision-list">{decisions.map((decision, index) => <article className="decision-card" key={`${decision.decision}-${index}`}><CheckCircle2 size={20} /><div><h3>{decision.decision || decision.text}</h3>{decision.context && <p>{decision.context}</p>}{decision.quote && <blockquote>“{decision.quote}” <span>{decision.timestamp}</span></blockquote>}</div></article>)}</div>
     </section>
-    <section><div className="section-title"><div><span className="eyebrow">Responsibilities</span><h2>Assigned actions</h2></div><span className="count">{meeting.actions?.length || 0}</span></div>
-      <div className="action-table">{(meeting.actions || []).map((action) => <div className="action-row" key={action.id}><CircleDot size={16} /><strong>@{action.owner}</strong><span>{action.task}</span><span className="tag">{action.priority}</span><span>{action.deadline || 'No deadline'}</span></div>)}</div>
+    <section><div className="section-title"><div><span className="eyebrow">Responsibilities</span><h2>Assigned actions</h2></div><span className="count">{actions.length}</span></div>
+      <div className="action-table">{actions.map((action) => <div className="action-row" key={action.id}><CircleDot size={16} /><strong>@{action.owner}</strong><span>{action.task}</span><span className="tag">{action.priority}</span><span>{action.deadline || 'No deadline'}</span></div>)}</div>
     </section>
     <section><div className="section-title"><div><span className="eyebrow">Named transcript</span><h2>What everyone said</h2></div><span className="count">{meeting.transcript?.length || 0}</span></div><div className="transcript-list">{(meeting.transcript || []).map((segment, index) => <article className="transcript-row" key={`${segment.startTime}-${index}`}><div><strong>{segment.speaker || 'Unassigned speaker'}</strong><time>{formatDate(new Date(new Date(meeting.started_at).getTime() + (Number(segment.startTime) || 0) * 1000))}</time></div><p>{segment.text}</p></article>)}</div></section>
   </main>;
@@ -342,7 +354,7 @@ function HowItWorksView({ settings, setView }) {
   </main>;
 }
 
-function SettingsView({ settings, providers, onSave }) {
+function SettingsView({ settings, onSave }) {
   const [form, setForm] = useState(settings || {});
   const [notice, setNotice] = useState('');
   const [localStatus, setLocalStatus] = useState(null);
@@ -355,35 +367,36 @@ function SettingsView({ settings, providers, onSave }) {
     try {
       const result = await api.localAi.test(form);
       setLocalStatus(result);
+      if (result.savedSettings) {
+        setForm(result.savedSettings);
+        await onSave(result.savedSettings);
+      }
       setNotice(result.ok ? 'Local Whisper and LM Studio are connected.' : 'One or more local AI services are unavailable. Check the URLs and Mac firewall.');
       showToast(result.ok ? 'Both Local AI services are connected.' : 'One or more Local AI services need attention.');
     } catch (error) { setNotice(error.message); setLocalStatus(null); }
     finally { setTestingLocal(false); }
   };
-  return <main className="page settings-page"><section className="hero compact"><span className="eyebrow">Settings</span><h1>Connect your intelligence stack.</h1><p>API keys stay in the backend data directory and never enter the extension package.</p></section>
+  return <main className="page settings-page"><section className="hero compact"><span className="eyebrow">Settings</span><h1>Connect your local intelligence engine.</h1><p>Transcription and meeting intelligence run entirely on your MacBook through the UTM bridge. No cloud AI key is used.</p></section>
     <form onSubmit={save} className="settings-grid">
       <section className="settings-card profile-card"><div><span className="eyebrow">Speaker identity</span><h2>Your profile & default participants</h2><p>These names help Manuscript replace generic speaker labels and prefill meeting rosters.</p></div>
         <label className="field"><span>Your name</span><input placeholder="Gokul" {...field('userName')} /></label>
         <label className="field"><span>Common teammates</span><input placeholder="Priya, Rahul, Ananya" value={(Array.isArray(form.defaultParticipants) ? form.defaultParticipants : String(form.defaultParticipants || '').split(',')).join(', ')} onChange={(event) => setForm((current) => ({ ...current, defaultParticipants: event.target.value.split(',').map((name) => name.trim()).filter(Boolean) }))} /><small>Separate names with commas. You can still rename speakers per meeting.</small></label>
       </section>
-      <section className="settings-card local-ai-card"><div><span className="eyebrow">Recommended for UTM</span><h2>MacBook Local AI</h2><p>Use the Mac host IP reachable from Ubuntu, such as <code>192.168.64.1</code> or <code>10.0.2.2</code>.</p></div>
-        <label className="field"><span>Python Whisper server URL</span><input type="url" placeholder="http://192.168.64.1:8000" {...field('localWhisperUrl')} /><small>Manuscript tries OpenAI `/v1/audio/transcriptions`, `/inference`, then `/transcribe`.</small></label>
-        <label className="field"><span>Whisper model ID</span><input placeholder="whisper-1" {...field('localWhisperModel')} /></label>
-        <label className="field"><span>LM Studio base URL</span><input type="url" placeholder="http://192.168.64.1:1234/v1" {...field('lmStudioBaseUrl')} /><small>LM Studio must listen on the network, not only localhost.</small></label>
-        <label className="field"><span>LM Studio LFM model ID</span><input placeholder="lfm2.5-1.2b-instruct" {...field('lmStudioModel')} /></label>
+      <section className="settings-card local-ai-card"><div><span className="eyebrow">100% local · MacBook host</span><h2>Local AI Engine</h2><p>Manuscript checks your saved URL, the Ubuntu default gateway, <code>192.168.64.1</code>, <code>10.0.2.2</code>, and localhost, then saves the first working services.</p></div>
+        <label className="field"><span>Whisper Server URL</span><input type="url" placeholder="http://192.168.64.1:8000" {...field('localWhisperUrl')} /><small>Multipart audio uses `/v1/audio/transcriptions`, `/inference`, or `/transcribe` without authorization.</small></label>
+        <div className="local-model-row"><span>Whisper model</span><strong>mlx-community/whisper-large-v3-turbo</strong></div>
+        <label className="field"><span>LM Studio Base URL</span><input type="url" placeholder="http://192.168.64.1:1234/v1" {...field('lmStudioBaseUrl')} /><small>The loaded model list is queried automatically; the first loaded ID is used if <code>lfm3-1.7b</code> is not exact.</small></label>
+        <div className="local-model-row"><span>LM Studio model</span><strong>{form.lmStudioModel || 'lfm3-1.7b'}</strong></div>
+        <label className="field"><span>Transcription language</span><select {...field('transcriptionLanguage')}><option value="hinglish">English + Hindi (Hinglish)</option><option value="en">English only</option><option value="hi">Hindi</option></select></label>
         <div className="connection-row">
-          <button className="ghost" type="button" onClick={testLocalAi} disabled={testingLocal}>{testingLocal ? 'Testing connections…' : 'Test Local AI Models'}</button>
+          <button className="primary" type="button" onClick={testLocalAi} disabled={testingLocal}>{testingLocal ? 'Detecting Mac host and testing…' : 'Auto-Detect Mac Host IP & Test Local AI'}</button>
           {localStatus && <div className="connection-badges" aria-live="polite">
             <span className={`connection-badge ${localStatus.whisper?.ok ? 'connected' : 'failed'}`}><i /> Whisper {localStatus.whisper?.ok ? 'Connected' : 'Unavailable'}</span>
             <span className={`connection-badge ${localStatus.lmStudio?.ok ? 'connected' : 'failed'}`}><i /> LM Studio {localStatus.lmStudio?.ok ? 'Connected' : 'Unavailable'}</span>
           </div>}
         </div>
       </section>
-      <section className="settings-card"><h2>Transcription</h2><label className="field"><span>Provider</span><select {...field('sttService')}>{(providers?.stt || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
-        <label className="field"><span>Groq API key</span><input type="password" {...field('groqApiKey')} /></label><label className="field"><span>Sarvam API key</span><input type="password" {...field('sarvamApiKey')} /></label><label className="field"><span>AssemblyAI API key</span><input type="password" {...field('assemblyAiApiKey')} /></label><label className="field"><span>Google STT API key</span><input type="password" {...field('googleApiKey')} /></label><label className="field"><span>Google Cloud project ID (optional)</span><input {...field('googleCloudProjectId')} /></label></section>
-      <section className="settings-card"><h2>Summaries & decisions</h2><label className="field"><span>LLM provider</span><select {...field('llmProvider')}>{(providers?.llm || []).map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></label>
-        <label className="field"><span>Gemini API key</span><input type="password" {...field('geminiApiKey')} /></label><label className="field"><span>Anthropic API key</span><input type="password" {...field('claudeApiKey')} /></label></section>
-      <section className="settings-card"><h2>Exports</h2><label className="field"><span>Notion integration token</span><input type="password" {...field('notionToken')} /></label><label className="field"><span>Notion page or database ID</span><input {...field('notionDatabaseId')} /></label><label className="field"><span>Obsidian vault name</span><input {...field('obsidianVault')} /></label>
+      <section className="settings-card"><div><span className="eyebrow">Optional</span><h2>External Workspace Sync</h2></div><label className="field"><span>Notion integration token</span><input type="password" {...field('notionToken')} /></label><label className="field"><span>Notion page or database ID</span><input {...field('notionDatabaseId')} /></label><label className="field"><span>Obsidian vault name</span><input {...field('obsidianVault')} /></label>
         <label className="toggle"><input type="checkbox" checked={Boolean(form.autoSyncExports)} onChange={(event) => setForm((current) => ({ ...current, autoSyncExports: event.target.checked }))} /><span>Auto-sync to Notion & prepare Obsidian after every Google Meet</span></label></section>
       <div className="form-footer"><button className="primary" type="submit">Save settings</button>{notice && <span className="notice">{notice}</span>}</div>
     </form>
@@ -396,7 +409,6 @@ export default function App() {
   const [actions, setActions] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [providers, setProviders] = useState(null);
   const [selected, setSelected] = useState(null);
   const [progress, setProgress] = useState(null);
 
@@ -404,7 +416,7 @@ export default function App() {
     const [meetingList, actionList, scheduleList] = await Promise.all([api.meetings.list(), api.actions.list(), api.calendar.list()]);
     setMeetings(meetingList); setActions(actionList); setSchedules(scheduleList);
   }, []);
-  useEffect(() => { refresh(); Promise.all([api.settings.get(), api.providers()]).then(([nextSettings, nextProviders]) => { setSettings(nextSettings); setProviders(nextProviders); }); }, [refresh]);
+  useEffect(() => { refresh(); api.settings.get().then(setSettings); }, [refresh]);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('view') === 'actions') { setView('actions'); return; }
@@ -413,7 +425,13 @@ export default function App() {
     api.meetings.get(meetingId).then((meeting) => { setSelected(meeting); setView('meeting'); }).catch(() => {});
   }, []);
   useEffect(() => api.events((event) => {
-    if (event.type === 'processing') setProgress(event.percent >= 100 ? null : event);
+    if (event.type === 'processing') {
+      setProgress(event.percent >= 100 ? null : event);
+      if (event.percent >= 100) {
+        refresh();
+        api.meetings.get(event.meetingId).then((meeting) => setSelected((current) => current?.id === event.meetingId ? meeting : current)).catch(() => {});
+      }
+    }
     if (event.type === 'processing-error') setProgress(null);
     if (event.type === 'action-updated' || event.type === 'calendar-updated') refresh();
   }), [refresh]);
@@ -422,11 +440,11 @@ export default function App() {
   const refreshSelected = async () => { await refresh(); if (selected) setSelected(await api.meetings.get(selected.id)); };
 
   return <><Nav view={view} setView={(next) => { setView(next); if (next !== 'meeting') setSelected(null); }} /><ToastRegion />
-    {view === 'dashboard' && <Dashboard meetings={meetings} progress={progress} openMeeting={openMeeting} refresh={refresh} />}
+    {view === 'dashboard' && <Dashboard meetings={meetings} progress={progress} openMeeting={openMeeting} refresh={refresh} settings={settings} />}
     {view === 'meeting' && <MeetingView meeting={selected} back={() => setView('dashboard')} refresh={refreshSelected} settings={settings} />}
     {view === 'actions' && <ActionTracker actions={actions} meetings={meetings} refresh={refresh} openMeeting={openMeeting} settings={settings} />}
     {view === 'calendar' && <CalendarView schedules={schedules} refresh={refresh} />}
-    {view === 'settings' && <SettingsView settings={settings} providers={providers} onSave={async (next) => setSettings(await api.settings.save(next))} />}
+    {view === 'settings' && <SettingsView settings={settings} onSave={async (next) => setSettings(await api.settings.save(next))} />}
     {view === 'how' && <HowItWorksView settings={settings} setView={setView} />}
   </>;
 }

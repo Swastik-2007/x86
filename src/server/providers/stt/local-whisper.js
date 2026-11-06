@@ -1,7 +1,11 @@
 'use strict';
 
 const fs = require('node:fs');
-const { normalizeUrl, probe } = require('../../local-ai');
+const {
+  DEFAULT_WHISPER_MODEL, normalizeUrl, whisperCandidates, findWhisper,
+} = require('../../local-ai');
+
+const HINGLISH_PROMPT = 'Hello everyone, my name is Gokul Prasath. This is a bilingual meeting in English and Hindi (Hinglish). Transcribe English words in English Latin script and Hindi clearly.';
 
 function endpointCandidates(value) {
   const base = normalizeUrl(value, 'http://192.168.64.1:8000');
@@ -35,10 +39,14 @@ function parseResponse(payload) {
   return segments;
 }
 
-async function postAudio(endpoint, wavPath, model, fetchImpl) {
+async function postAudio(endpoint, wavPath, model, config, fetchImpl) {
   const form = new FormData();
   form.append('file', new Blob([fs.readFileSync(wavPath)], { type: 'audio/wav' }), 'meeting.wav');
-  form.append('model', model || 'whisper-1');
+  form.append('model', model || DEFAULT_WHISPER_MODEL);
+  form.append('prompt', HINGLISH_PROMPT);
+  form.append('initial_prompt', HINGLISH_PROMPT);
+  const language = String(config.transcriptionLanguage || 'hinglish').toLowerCase();
+  if (language === 'en' || language === 'hi') form.append('language', language);
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'segment');
   const response = await fetchImpl(endpoint, { method: 'POST', body: form });
@@ -55,28 +63,27 @@ async function postAudio(endpoint, wavPath, model, fetchImpl) {
 
 async function transcribe({ wavPath, model, config, onProgress }, deps = {}) {
   if (!fs.existsSync(wavPath)) throw new Error(`Audio file not found: ${wavPath}`);
+  if (fs.statSync(wavPath).size <= 44) throw new Error('The normalized audio recording is empty');
   const fetchImpl = deps.fetchImpl || globalThis.fetch;
-  const endpoints = endpointCandidates(config.localWhisperUrl);
+  const endpoints = whisperCandidates(config, deps).flatMap(endpointCandidates);
   const failures = [];
   onProgress?.(0);
   for (const endpoint of endpoints) {
     try {
-      const segments = parseResponse(await postAudio(endpoint, wavPath, config.localWhisperModel || model, fetchImpl));
+      const segments = parseResponse(await postAudio(endpoint, wavPath, config.localWhisperModel || model || DEFAULT_WHISPER_MODEL, config, fetchImpl));
       if (!segments.length) throw new Error('Local Whisper returned an empty transcript');
       onProgress?.(1);
       return segments;
     } catch (error) {
       failures.push(`${endpoint}: ${error.message}`);
-      if (![404, 405, 422].includes(error.status)) break;
     }
   }
   throw new Error(`Local Whisper transcription failed. ${failures.join(' | ')}`);
 }
 
 async function test({ config }, deps = {}) {
-  await probe(normalizeUrl(config.localWhisperUrl, 'http://192.168.64.1:8000'), {
-    label: 'Python Whisper', fetchImpl: deps.fetchImpl || globalThis.fetch,
-  });
+  const result = await findWhisper(config, deps);
+  if (!result.ok) throw new Error(result.error || 'Python Whisper is unavailable');
 }
 
 module.exports = {
@@ -89,11 +96,11 @@ module.exports = {
   credentials: [
     { configKey: 'localWhisperUrl', label: 'Python Whisper server URL', type: 'url', placeholder: 'http://192.168.64.1:8000', required: true },
   ],
-  models: [{ id: 'whisper-1', name: 'Server default / whisper-1', badge: 'Default' }],
-  defaultModel: 'whisper-1',
+  models: [{ id: DEFAULT_WHISPER_MODEL, name: 'MLX Whisper Large V3 Turbo', badge: 'Local default' }],
+  defaultModel: DEFAULT_WHISPER_MODEL,
   allowCustomModel: true,
   capabilities: { diarization: true, local: true },
   transcribe,
   test,
-  _internals: { endpointCandidates, parseResponse },
+  _internals: { endpointCandidates, parseResponse, postAudio, HINGLISH_PROMPT },
 };

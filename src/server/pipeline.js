@@ -8,7 +8,18 @@ const { normalizeAudio } = require('./audio');
 const db = require('./database');
 const { syncToNotion, obsidianExport } = require('./exports');
 
-const P8_PROMPT = `You are Manuscript, a meeting intelligence engine. Return only valid JSON. Write clear, neutral English even when the meeting code-switches between languages. Preserve evidence for decisions and make every responsibility actionable.
+const P8_PROMPT = `/no_think
+Keep internal reasoning under 3 sentences. Output the JSON immediately.
+You are Manuscript, a bilingual meeting intelligence engine. Return only valid JSON.
+
+The transcript may contain English, Hindi in Devanagari, Hinglish, or phonetic Devanagari transcriptions of English words. For example, "एलो एवरिवान माई नेम इस गोकुल प्रसात" means "Hello everyone, my name is Gokul Prasath."
+
+Language rules:
+- Write summary and every topics[].heading in clear, professional English.
+- Write topics[].content as an English explanation or translation, followed by the important original Hindi/Hinglish nuance in parentheses when present.
+- Write decisions[].decision and action_items[].task in clear English, but preserve decisions[].quote exactly in the transcript language.
+- Never interpret greetings such as "Hello everyone" or phonetic variants as a person's name. Extract a stated name such as "Gokul Prasath"; otherwise retain the configured participant or speaker label.
+- Preserve evidence for decisions and make every responsibility actionable.
 
 Required JSON shape:
 {
@@ -80,9 +91,71 @@ function structuredNotes(notes) {
     attendees: Array.isArray(notes.attendees) ? notes.attendees : [],
     topics: notes.topics || notes.sections || [],
     decisions: (notes.decisions || notes.key_decisions || []).map((item) => typeof item === 'string' ? { decision: item, quote: '', timestamp: '', context: '' } : item),
+    action_items: notes.action_items || notes.actions || [],
     provider: notes._llmProvider || null,
     model: notes._llmModel || null,
+    warning: notes._llmWarning || null,
   };
+}
+
+function fallbackMeetingNotes(transcript, title, error, model) {
+  const segments = (Array.isArray(transcript) ? transcript : [])
+    .map((segment) => ({
+      speaker: String(segment?.speaker || 'Speaker').trim() || 'Speaker',
+      text: String(segment?.text || '').trim(),
+    }))
+    .filter((segment) => segment.text);
+  const attendees = [...new Set(segments.map((segment) => segment.speaker))]
+    .map((speaker) => ({ label: speaker, name: isGenericSpeaker(speaker) ? null : speaker, role: null }));
+  const excerpt = segments.slice(0, 12).map((segment) => `${segment.speaker}: ${segment.text}`).join(' ').slice(0, 1800);
+  const overview = excerpt || 'The transcript was captured, but it did not contain enough text to create a detailed overview.';
+  return {
+    title: title || 'Untitled Meeting',
+    summary: `Transcript overview: ${overview}`,
+    attendees,
+    topics: [{ heading: 'Transcript overview', content: overview }],
+    decisions: [],
+    action_items: [],
+    _llmProvider: 'local-transcript-fallback',
+    _llmModel: model || null,
+    _llmWarning: error.message,
+  };
+}
+
+async function generateMeetingIntelligence({ id, title, transcript, liveNotes = [], config, notify }) {
+  notify('summarizing', 55);
+  const liveContext = liveNotes.map((note) => ({
+    speaker: 'Live note', text: note.text || String(note),
+    startTime: Number(note.timestamp) || 0, endTime: Number(note.timestamp) || 0,
+  }));
+  let result;
+  try {
+    result = await generateNotes([...transcript, ...liveContext], {
+      ...config, llmProvider: 'lm-studio', systemPrompt: P8_PROMPT, noteOutputMode: 'json',
+    }, {
+      meetingTitle: title,
+      onPreview: ({ progress }) => notify('summarizing', 55 + Math.round((Number(progress) || 0) * 30)),
+    });
+  } catch (error) {
+    if (!['EMPTY_LM_CONTENT', 'INVALID_MODEL_JSON'].includes(error.code)) throw error;
+    const model = config.lmStudioModel || 'lfm3-1.7b';
+    result = {
+      notes: fallbackMeetingNotes([...transcript, ...liveContext], title, error, model),
+      provider: 'local-transcript-fallback',
+      model,
+      fallback: { error: error.message },
+    };
+    notify('summarizing', 85, { warning: 'LM Studio returned no usable final answer; saved a transcript overview instead.' });
+  }
+  result.notes._llmProvider = result.provider;
+  result.notes._llmModel = result.model;
+  const structured = structuredNotes(result.notes);
+  const finalTitle = title && title !== 'Untitled Meeting' ? title : structured.title;
+  db.updateMeeting(id, {
+    title: finalTitle, structured, ended_at: new Date().toISOString(), status: 'COMPLETE', last_error: null,
+  });
+  const actions = db.replaceActions(id, normalizedActions(result.notes));
+  return { meeting: db.getMeeting(id), actions };
 }
 
 async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liveNotes, captions, exportPreferences = {}, startedAt: _startedAt, config, emit }) {
@@ -95,14 +168,14 @@ async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liv
       if (!transcript.length) throw new Error('Caption-only processing requires at least one caption');
       notify('transcribing', 50, { source: 'captions' });
     } else {
-      notify('normalizing', 5);
-      await normalizeAudio(uploadPath, wavPath, config.ffmpegPath);
-      db.updateMeeting(id, { audio_path: wavPath });
-
-      notify('transcribing', 15);
-      const provider = sttRegistry.get(config.sttService || sttRegistry.defaultId());
-      const model = sttRegistry.resolveModel(provider, config.sttModels?.[provider.id]);
       try {
+        notify('normalizing', 5);
+        await normalizeAudio(uploadPath, wavPath, config.ffmpegPath);
+        db.updateMeeting(id, { audio_path: wavPath });
+
+        notify('transcribing', 15);
+        const provider = sttRegistry.get('local-whisper');
+        const model = config.localWhisperModel || provider.defaultModel;
         transcript = await provider.transcribe({
           wavPath, model, config,
           onProgress: (fraction) => notify('transcribing', 15 + Math.round((Number(fraction) || 0) * 35)),
@@ -117,19 +190,9 @@ async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liv
     }
     db.updateMeeting(id, { transcript });
 
-    notify('summarizing', 55);
-    const liveContext = liveNotes.map((note) => ({ speaker: 'Live note', text: note.text || String(note), startTime: Number(note.timestamp) || 0, endTime: Number(note.timestamp) || 0 }));
-    const result = await generateNotes([...transcript, ...liveContext], { ...config, systemPrompt: config.systemPrompt || P8_PROMPT, noteOutputMode: 'json' }, {
-      meetingTitle: title,
-      onPreview: ({ progress }) => notify('summarizing', 55 + Math.round((Number(progress) || 0) * 30)),
-    });
-    result.notes._llmProvider = result.provider;
-    result.notes._llmModel = result.model;
-    const structured = structuredNotes(result.notes);
-    const finalTitle = title && title !== 'Untitled Meeting' ? title : structured.title;
-    db.updateMeeting(id, { title: finalTitle, structured, ended_at: new Date().toISOString(), status: 'COMPLETE', last_error: null });
-    const actions = db.replaceActions(id, normalizedActions(result.notes));
-    let meeting = db.getMeeting(id);
+    const intelligence = await generateMeetingIntelligence({ id, title, transcript, liveNotes, config, notify });
+    const { actions } = intelligence;
+    let { meeting } = intelligence;
 
     const exports = { obsidian: obsidianExport(meeting, config.obsidianVault) };
     if ((exportPreferences.notion || config.autoSyncExports) && config.notionToken && config.notionDatabaseId) {
@@ -150,4 +213,26 @@ async function runPipeline({ id, uploadPath, title, meetingUrl: _meetingUrl, liv
   }
 }
 
-module.exports = { runPipeline, P8_PROMPT, structuredNotes, normalizedActions, parseField, captionTranscript, mergeCaptionNames };
+async function regenerateMeeting({ id, config, emit }) {
+  const existing = db.getMeeting(id);
+  if (!existing) return null;
+  if (!existing.transcript?.length) throw new Error('This meeting has no transcript to summarize');
+  const notify = (stage, percent, extra = {}) => emit({ type: 'processing', meetingId: id, stage, percent, ...extra });
+  db.updateMeeting(id, { status: 'PROCESSING', last_error: null });
+  try {
+    const result = await generateMeetingIntelligence({
+      id, title: existing.title, transcript: existing.transcript, liveNotes: existing.live_notes, config, notify,
+    });
+    notify('complete', 100, result);
+    return result;
+  } catch (error) {
+    db.updateMeeting(id, { status: 'ERROR', last_error: error.message });
+    emit({ type: 'processing-error', meetingId: id, error: error.message });
+    throw error;
+  }
+}
+
+module.exports = {
+  runPipeline, regenerateMeeting, generateMeetingIntelligence, P8_PROMPT, structuredNotes,
+  fallbackMeetingNotes, normalizedActions, parseField, captionTranscript, mergeCaptionNames,
+};

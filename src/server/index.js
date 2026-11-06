@@ -10,11 +10,11 @@ const multer = require('multer');
 const { WebSocketServer } = require('ws');
 const db = require('./database');
 const { dataDir, getConfig, updateConfig } = require('./config');
-const { runPipeline, parseField } = require('./pipeline');
+const { runPipeline, regenerateMeeting, parseField } = require('./pipeline');
 const { syncToNotion, obsidianExport } = require('./exports');
 const { describeProviders, registries } = require('./providers');
 const logger = require('./logger');
-const { testLocalAi, splitSettings } = require('./local-ai');
+const { DEFAULT_WHISPER_MODEL, testLocalAi, splitSettings } = require('./local-ai');
 const { googleCalendarUrl, ics, actionCalendarEvent, scheduledMeetingCalendarEvent } = require('./calendar');
 
 const host = process.env.HOST || '0.0.0.0';
@@ -53,7 +53,10 @@ function broadcast(message) {
 }
 
 function effectiveConfig() {
-  return { ...getConfig(), ...db.getSettings() };
+  return {
+    ...getConfig(), ...db.getSettings(),
+    sttService: 'local-whisper', llmProvider: 'lm-studio', localWhisperModel: DEFAULT_WHISPER_MODEL,
+  };
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'manuscript-api', version: require('../../package.json').version }));
@@ -87,8 +90,18 @@ app.post('/api/meetings/upload-audio', upload.single('audio'), async (req, res, 
   db.createMeeting({ id, title: req.body.title || 'Untitled Meeting', meeting_url: req.body.meetingUrl || '', started_at: startedAt, audio_path: req.file.path, live_notes: liveNotes, captions, status: 'PROCESSING' });
   broadcast({ type: 'processing', meetingId: id, stage: 'uploaded', percent: 1 });
   try {
-    const result = await runPipeline({ id, uploadPath: req.file.path, title: req.body.title || 'Untitled Meeting', meetingUrl: req.body.meetingUrl || '', liveNotes, captions, exportPreferences, startedAt, config: effectiveConfig(), emit: broadcast });
+    const config = effectiveConfig();
+    config.transcriptionLanguage = req.body.language || config.transcriptionLanguage || 'hinglish';
+    const result = await runPipeline({ id, uploadPath: req.file.path, title: req.body.title || 'Untitled Meeting', meetingUrl: req.body.meetingUrl || '', liveNotes, captions, exportPreferences, startedAt, config, emit: broadcast });
     res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.post('/api/meetings/:id/summarize', async (req, res, next) => {
+  try {
+    const result = await regenerateMeeting({ id: req.params.id, config: effectiveConfig(), emit: broadcast });
+    if (!result) return res.status(404).json({ error: 'Meeting not found' });
+    res.json(result);
   } catch (error) { next(error); }
 });
 
@@ -218,6 +231,12 @@ app.post('/api/settings', (req, res) => {
 app.post('/api/local-ai/test', async (req, res) => {
   const candidate = { ...effectiveConfig(), ...(req.body || {}) };
   res.json(await testLocalAi(candidate));
+});
+app.post('/api/settings/test-local-ai', async (req, res) => {
+  const candidate = { ...effectiveConfig(), ...(req.body || {}) };
+  const result = await testLocalAi(candidate);
+  if (Object.keys(result.settings).length) db.updateSettings(result.settings);
+  res.json({ ...result, savedSettings: effectiveConfig() });
 });
 app.get('/api/providers', (_req, res) => res.json(describeProviders()));
 app.post('/api/providers/test', async (req, res, next) => {

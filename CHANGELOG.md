@@ -1,5 +1,40 @@
 # Changelog
 
+## [7.1.1] - 2026-11-06
+
+### Changed
+
+- LM Studio summarization now prefers the native `/api/v1/chat` endpoint with reasoning explicitly disabled, while retaining `/v1/chat/completions` as a compatibility fallback with a larger final-answer budget.
+
+### Fixed
+
+- Prevented LFM3 reasoning from consuming the entire completion budget and leaving `message.content` empty.
+- Added an explicit reasoning-only response diagnostic and a transcript-derived meeting overview so captured meetings remain reviewable when LM Studio produces no usable final answer.
+
+## [7.1.0] - 2026-11-06
+
+### Added
+
+- Ubuntu default-gateway detection with automatic Whisper and LM Studio fallback probing and persistence of the first working Mac host URLs.
+- English/Hindi/Hinglish transcription modes, MLX Whisper prompt guidance, bilingual topic rendering, and one-click summary regeneration from a saved transcript.
+
+### Changed
+
+- Made `mlx-community/whisper-large-v3-turbo` and LM Studio `lfm3-1.7b` the only active AI engines; removed all cloud AI providers, credential fields, validation branches, and SDK dependencies.
+- LM Studio now discovers the loaded model ID, disables model thinking, uses low reasoning effort, caps output at 2,048 tokens, strips think tags, and allows up to three minutes for local completion.
+
+### Fixed
+
+- Persisted and returned summary, topics, attendees, decisions, and action items consistently, and refreshed Meeting Details when processing completes.
+- Added bilingual English-first instructions so phonetic Devanagari English and raw Hindi are translated into useful meeting intelligence without corrupting exact evidence quotes.
+
+## [7.0.1] - 2026-11-06
+
+### Fixed
+
+- Prevented the Mac dashboard from crashing when Chrome omits `navigator.mediaDevices` on a plain-HTTP Ubuntu VM address.
+- Added browser-capture capability checks, disabled only unsupported recording controls, and displayed actionable Chrome extension, HTTPS, and localhost-tunnel guidance while keeping uploads available.
+
 ## [7.0.0] - 2026-11-05
 
 ### Added

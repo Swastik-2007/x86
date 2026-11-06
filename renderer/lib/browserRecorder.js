@@ -2,7 +2,46 @@ function stopTracks(stream) {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
+export function getBrowserCaptureSupport({ includeTab = false, environment = globalThis } = {}) {
+  const mediaDevices = environment.navigator?.mediaDevices;
+  if (environment.isSecureContext === false) {
+    return {
+      supported: false,
+      code: 'INSECURE_CONTEXT',
+      reason: 'Chrome blocks browser audio capture on plain HTTP pages opened from another machine. Use the Manuscript Chrome extension in Google Meet, serve the dashboard over HTTPS, or open it through a localhost SSH tunnel.',
+    };
+  }
+  if (!mediaDevices || typeof mediaDevices.getUserMedia !== 'function') {
+    return {
+      supported: false,
+      code: 'MEDIA_DEVICES_UNAVAILABLE',
+      reason: 'This browser context does not expose microphone capture. Use the Manuscript Chrome extension in Google Meet or open the dashboard from a secure HTTPS/localhost address.',
+    };
+  }
+  if (includeTab && typeof mediaDevices.getDisplayMedia !== 'function') {
+    return {
+      supported: false,
+      code: 'DISPLAY_CAPTURE_UNAVAILABLE',
+      reason: 'This browser context does not support shared-tab capture. Use the Manuscript Chrome extension in Google Meet, or use a current Chrome build over HTTPS/localhost.',
+    };
+  }
+  if (typeof environment.AudioContext !== 'function' || typeof environment.MediaRecorder !== 'function') {
+    return {
+      supported: false,
+      code: 'RECORDING_API_UNAVAILABLE',
+      reason: 'This browser does not provide the Web Audio and MediaRecorder APIs required for dashboard recording.',
+    };
+  }
+  return { supported: true, code: 'SUPPORTED', reason: '' };
+}
+
 export async function startBrowserRecording({ includeTab = false } = {}) {
+  const support = getBrowserCaptureSupport({ includeTab });
+  if (!support.supported) {
+    const error = new Error(support.reason);
+    error.code = support.code;
+    throw error;
+  }
   const sources = [];
   let displayStream = null;
   let micStream = null;

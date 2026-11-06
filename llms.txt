@@ -5,9 +5,9 @@ Manuscript is a pure browser web app, Chrome MV3 extension, and Express/WebSocke
 - Web UI: React/Vite at `0.0.0.0:5173`.
 - API: Express and WebSocket at `0.0.0.0:3001`.
 - Capture: Chrome `tabCapture`, `getDisplayMedia`, `getUserMedia`, Web Audio, and `MediaRecorder`; no Electron or OS-native audio capture.
-- STT: Local Python Whisper, Groq Whisper, Sarvam AI, AssemblyAI, Google STT, and named Google Meet captions.
-- LLM: Local LM Studio (OpenAI-compatible), Gemini, Groq, or Claude produces structured summaries, evidence-backed decisions, and assigned actions.
-- Persistence: sql.js meetings, actions, schedules, and local settings plus secret JSON configuration under `.data/` or `MANUSCRIPT_DATA_DIR`.
+- STT: MacBook `mlx-community/whisper-large-v3-turbo` plus named Google Meet caption fallback; no cloud AI provider.
+- LLM: MacBook LM Studio `lfm3-1.7b` (or its first loaded model ID); no cloud AI provider.
+- Persistence: sql.js meetings, actions, schedules, and local settings plus optional workspace-sync configuration under `.data/` or `MANUSCRIPT_DATA_DIR`.
 - Workflow: real-name speaker mapping, four-column action tracking, month/week scheduling, and Google/ICS deadline export.
 - Exports: rich Notion pages and Obsidian Markdown plus `obsidian://new` deep links.
 

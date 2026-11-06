@@ -1,28 +1,12 @@
-/**
- * The single place providers are registered. To add an engine:
- *   1. create src/server/providers/{stt|llm}/<name>.js (see docs/ADDING_PROVIDERS.md)
- *   2. add one line below
- *   3. add an icon in renderer/components/settings/providers/providerIcons.js
- */
+/** Local-only provider registration. */
 const { createRegistry } = require('./registry');
 
 const sttRegistry = createRegistry('stt', ['transcribe', 'test']);
 const llmRegistry = createRegistry('llm', ['generate', 'test']);
 
-[
-  require('./stt/local-whisper'),
-  require('./stt/google'),
-  require('./stt/sarvam'),
-  require('./stt/assemblyai'),
-  require('./stt/groq'),
-].forEach((p) => sttRegistry.register(p));
+sttRegistry.register(require('./stt/local-whisper'));
 
-[
-  require('./llm/lm-studio'),
-  require('./llm/gemini'),
-  require('./llm/groq'),
-  require('./llm/claude'),
-].forEach((p) => llmRegistry.register(p));
+llmRegistry.register(require('./llm/lm-studio'));
 
 const registries = { stt: sttRegistry, llm: llmRegistry };
 

@@ -1,12 +1,28 @@
 {
   "name": "manuscript",
-  "version": "7.0.0",
+  "version": "7.1.1",
   "description": "Manuscript — browser-first meeting intelligence with Local AI, Google Meet capture, speaker identity, action tracking, scheduling, and rich exports.",
-  "keywords": ["ai-meeting-notes", "meeting-transcription", "decision-log", "action-tracker", "google-meet", "chrome-extension", "notion", "obsidian", "web-app", "node-api"],
+  "keywords": [
+    "ai-meeting-notes",
+    "meeting-transcription",
+    "decision-log",
+    "action-tracker",
+    "google-meet",
+    "chrome-extension",
+    "notion",
+    "obsidian",
+    "web-app",
+    "node-api"
+  ],
   "homepage": "https://github.com/Swastik-2007/x86",
-  "bugs": { "url": "https://github.com/Swastik-2007/x86/issues" },
+  "bugs": {
+    "url": "https://github.com/Swastik-2007/x86/issues"
+  },
   "license": "GPL-3.0-only",
-  "repository": { "type": "git", "url": "https://github.com/Swastik-2007/x86.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Swastik-2007/x86.git"
+  },
   "main": "src/server/index.js",
   "packageManager": "pnpm@12.16.1",
   "scripts": {
@@ -24,13 +40,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.22.0",
-    "@google/generative-ai": "^0.24.1",
     "@notionhq/client": "^2.3.0",
-    "assemblyai": "^4.41.7",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "google-auth-library": "^10.5.0",
     "lucide-react": "^1.61.0",
     "multer": "^2.0.2",
     "partial-json": "^0.1.7",

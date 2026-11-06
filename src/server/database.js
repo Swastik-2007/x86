@@ -84,7 +84,13 @@ function rows(sql, values = []) {
 function parse(value, fallback) { try { return value ? JSON.parse(value) : fallback; } catch { return fallback; } }
 function hydrateMeeting(row) {
   if (!row) return null;
-  return { ...row, transcript: parse(row.transcript, []), structured: parse(row.structured, null), live_notes: parse(row.live_notes, []), captions: parse(row.captions, []) };
+  const structured = parse(row.structured, null);
+  return {
+    ...row,
+    transcript: parse(row.transcript, []), structured, live_notes: parse(row.live_notes, []), captions: parse(row.captions, []),
+    summary: structured?.summary || '', topics: structured?.topics || [], attendees: structured?.attendees || [],
+    decisions: structured?.decisions || [], action_items: structured?.action_items || [],
+  };
 }
 
 function createMeeting(meeting) {
@@ -112,7 +118,10 @@ function updateMeeting(id, updates) {
 
 function getMeeting(id) {
   const meeting = hydrateMeeting(rows('SELECT * FROM meetings WHERE id = ?', [id])[0]);
-  if (meeting) meeting.actions = listActions({ meetingId: id });
+  if (meeting) {
+    meeting.actions = listActions({ meetingId: id });
+    meeting.action_items = meeting.actions;
+  }
   return meeting;
 }
 function listMeetings() { return rows('SELECT * FROM meetings ORDER BY started_at DESC').map(hydrateMeeting); }
